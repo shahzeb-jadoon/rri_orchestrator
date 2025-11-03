@@ -85,37 +85,44 @@ def main_app():
     with st.sidebar:
         st.header("🔬 Experiment Setup")
         
-        # Model selection dropdowns
+        # Model Selection
         available_models = ["Google Gemini", "OpenAI (GPT-4)"]
         model_a_name = st.selectbox("Select Model A (Starts)", available_models, index=0)
         model_b_name = st.selectbox("Select Model B (Responds)", available_models, index=1)
         
-        # System prompts define each model's role and behavior
+        # Turn limit to control costs
+        max_turns = st.number_input(
+            "Set Max Turns (per interaction)", 
+            min_value=1, 
+            max_value=50, 
+            value=5,
+            help="Each turn consists of one response from each model."
+        )
+
+        # Initial System Prompts
         st.subheader("System Prompts")
         prompt_a = st.text_area(
             "System Prompt for Model A", 
             f"You are {model_a_name}. You are talking to {model_b_name}. Start the conversation.", 
             height=100
         )
-        prompt_b = st.text_area(
-            "System Prompt for Model B", 
-            f"You are {model_b_name}. You are talking to {model_a_name}. Wait for them to speak first, then respond.", 
-            height=100
-        )
+        prompt_b = st.text_area("System Prompt for Model B", f"You are {model_b_name}. You are talking to {model_a_name}. Wait for them to speak first, then respond.", height=100)
 
         if st.button("Start New Experiment"):
-            # Initialize a fresh experiment in the database
-            exp_id = database.create_experiment(model_a_name, model_b_name, prompt_a, prompt_b)
+            # Create a new experiment in the database
+            exp_id = database.create_experiment(model_a_name, model_b_name, prompt_a, prompt_b, max_turns)
             
-            # Reset session state for new conversation
+            # Reset the session state for the new chat
             st.session_state.messages = []
             st.session_state.experiment_id = exp_id
             st.session_state.model_a_name = model_a_name
             st.session_state.model_b_name = model_b_name
-            # Each model maintains its own conversation history for context
             st.session_state.model_a_history = [{"role": "system", "content": prompt_a}]
             st.session_state.model_b_history = [{"role": "system", "content": prompt_b}]
-            st.success(f"Started new experiment: {exp_id}")
+            st.session_state.turn_count = 0
+            st.session_state.max_turns = max_turns
+            st.session_state.limit_reached = False
+            st.success(f"Started new experiment: {exp_id} with a limit of {max_turns} turns.")
             st.rerun()
 
     # --- Main Chat Interface ---
@@ -129,7 +136,22 @@ def main_app():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Handle new user input
+    # Check if the turn limit has been reached
+    if st.session_state.get("limit_reached", False):
+        st.info("Turn limit reached.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Continue for 5 more turns"):
+                st.session_state.max_turns += 5
+                st.session_state.limit_reached = False
+                st.rerun()
+        with col2:
+            if st.button("End Experiment"):
+                # Just keeps the input disabled
+                st.warning("Experiment ended. You can start a new one from the sidebar.")
+        return # Stop further execution in this run
+
+    # Get user input, disable if limit is reached
     if user_prompt := st.chat_input("Researcher: Start the conversation or intervene..."):
         
         exp_id = st.session_state.experiment_id
@@ -186,15 +208,21 @@ def main_app():
                     
                     # Update both histories
                     st.session_state.model_b_history.append({"role": "assistant", "content": response_b})
-                    st.session_state.model_a_history.append({"role": "user", "content": response_b})
+                    st.session_state.model_a_history.append({"role": "user", "content": response_b}) # Model A sees this as a 'user' message
                     
                     st.markdown(response_b)
+
+                    # Increment turn count and check limit
+                    st.session_state.turn_count += 1
+                    if st.session_state.turn_count >= st.session_state.max_turns:
+                        st.session_state.limit_reached = True
+                        st.rerun()
 
                 except Exception as e:
                     st.error(f"Error from {st.session_state.model_b_name}: {e}")
 
 
-# --- Entry Point ---
+# --- App Entry Point ---
 
 if __name__ == "__main__":
     # Ensure database tables exist before running the app

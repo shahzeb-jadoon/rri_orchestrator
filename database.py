@@ -34,7 +34,8 @@ def setup_database():
         model_a_name TEXT NOT NULL,
         model_b_name TEXT NOT NULL,
         model_a_prompt TEXT,
-        model_b_prompt TEXT
+        model_b_prompt TEXT,
+        max_turns INTEGER
     );
     """)
     
@@ -54,18 +55,9 @@ def setup_database():
     conn.commit()
     conn.close()
 
-def create_experiment(model_a, model_b, prompt_a, prompt_b) -> int:
+def create_experiment(model_a, model_b, prompt_a, prompt_b, max_turns) -> int:
     """
-    Create a new experiment record in the database.
-    
-    Args:
-        model_a: Name of the first model (e.g., "Google Gemini")
-        model_b: Name of the second model (e.g., "OpenAI GPT-4")
-        prompt_a: System prompt for model A
-        prompt_b: System prompt for model B
-        
-    Returns:
-        The ID of the newly created experiment
+    Logs a new experiment in the database and returns the new experiment's ID.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -74,10 +66,10 @@ def create_experiment(model_a, model_b, prompt_a, prompt_b) -> int:
     
     cursor.execute(
         """
-        INSERT INTO experiments (start_time, model_a_name, model_b_name, model_a_prompt, model_b_prompt)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO experiments (start_time, model_a_name, model_b_name, model_a_prompt, model_b_prompt, max_turns)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (start_time, model_a, model_b, prompt_a, prompt_b)
+        (start_time, model_a, model_b, prompt_a, prompt_b, max_turns)
     )
     
     new_id = cursor.lastrowid
