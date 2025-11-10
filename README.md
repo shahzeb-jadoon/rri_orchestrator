@@ -204,21 +204,25 @@ See `example_prompts.txt` for a sample prompt file.
 
 ```
 rri_orchestrator/
-├── app_new.py              # Enhanced Streamlit app (Stage 2)
-├── app.py                  # Original Streamlit app (Stage 1)
-├── database.py             # Database operations
-├── llm_clients/            # LLM client implementations
-│   ├── __init__.py
-│   ├── base.py            # Abstract base class
-│   ├── gemini.py          # Google Gemini client
-│   └── openai.py          # OpenAI client
-├── requirements.txt        # Python dependencies
-├── .env.example           # Environment variable template
-├── README.md              # This file
-├── SETUP_GUIDE.md         # Detailed setup instructions
-├── CONVERSATION_FLOW.md   # How conversations work
-├── PROJECT_PLAN.md        # Development roadmap
-└── STAGE2_SUMMARY.md      # Stage 2 features documentation
+├── llm_clients/               # LLM client implementations
+│   ├── __init__.py           # Package initializer
+│   ├── base.py               # Abstract base class for all clients
+│   ├── gemini.py             # Google Gemini client
+│   └── openai.py             # OpenAI client
+├── app_new.py                 # Enhanced Streamlit app (recommended)
+├── app.py                     # Original Streamlit app (Stage 1)
+├── database.py                # SQLite database operations with migrations
+├── model_config.py            # Centralized model configuration (15 variants)
+├── run_batch_experiments.py   # CLI tool for batch experiment automation
+├── check_models.py            # Utility to verify available models
+├── test_database.py           # Database testing utility
+├── example_prompts.txt        # Sample prompts for batch experiments
+├── requirements.txt           # Python dependencies
+├── .env.example              # Environment variable template
+├── .env                      # Your API keys (gitignored)
+├── .gitignore                # Git ignore patterns
+├── README.md                 # Complete documentation (this file)
+└── rri_lab.db                # SQLite database (gitignored, your data)
 ```
 
 ## Adding New LLM Providers
@@ -227,7 +231,8 @@ To add support for a new LLM:
 
 1. Create a new client file in `llm_clients/` (e.g., `claude.py`)
 2. Inherit from `BaseLLMClient` and implement `generate_response()`
-3. Add the client to the factory function in `app.py`
+3. Add the model configuration to `model_config.py`
+4. Update the provider selection in `app_new.py`
 4. Add the API key to `.env`
 
 ## Development Roadmap
