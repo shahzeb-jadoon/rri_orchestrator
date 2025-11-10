@@ -1,0 +1,19 @@
+# Example prompts for batch experiments
+# Lines starting with # are ignored
+# One prompt per line
+
+Discuss the ethical implications of artificial intelligence in healthcare.
+What are the trade-offs between privacy and convenience in modern technology?
+Should social media platforms be regulated like public utilities?
+How will automation impact employment in the next decade?
+What role should government play in addressing climate change?
+Is nuclear energy a viable solution to our energy crisis?
+How can we balance free speech with preventing online harassment?
+What are the implications of gene editing technology like CRISPR?
+Should there be limits on wealth accumulation in society?
+How can we improve education systems to prepare students for the future?
+What is the responsibility of tech companies in combating misinformation?
+How should society approach the development of autonomous weapons?
+What are the philosophical implications of potential artificial general intelligence?
+How can we ensure AI systems are fair and unbiased?
+What is the future of work in an increasingly automated world?

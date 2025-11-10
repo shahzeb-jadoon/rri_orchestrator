@@ -9,10 +9,16 @@ class OpenAIClient(BaseLLMClient):
     as our standard across all clients.
     """
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model_id: str = "gpt-4o-mini"):
+        """
+        Initialize OpenAI client.
+        
+        Args:
+            api_key: OpenAI API key
+            model_id: Model ID (e.g., "gpt-4o", "gpt-3.5-turbo")
+        """
         self.client = OpenAI(api_key=api_key)
-        # Using mini model for cost-effectiveness during prototyping
-        self.model_name = "gpt-4o-mini"
+        self.model_name = model_id
 
     def generate_response(self, messages: List[Dict[str, str]]) -> str:
         """

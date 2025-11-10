@@ -1,6 +1,19 @@
 # Environment files - never commit API keys!
 .env
 
+# Database files - these contain research data
+*.db
+*.sqlite
+*.sqlite3
+
+# Batch experiment outputs
+batch_results_summary.json
+*_results_summary.json
+
+# Test/temporary prompt files
+test_prompts.txt
+temp_*.txt
+
 # Python cache files
 __pycache__/
 *.pyc

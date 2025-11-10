@@ -1,6 +1,7 @@
 import google.generativeai as genai
 from .base import BaseLLMClient
 from typing import List, Dict
+import json
 
 class GoogleGeminiClient(BaseLLMClient):
     """
@@ -9,14 +10,21 @@ class GoogleGeminiClient(BaseLLMClient):
     standard) and Gemini's specific format requirements.
     """
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model_id: str = "models/gemini-pro-latest"):
+        """
+        Initialize Gemini client.
+        
+        Args:
+            api_key: Google API key
+            model_id: Full model ID (e.g., "models/gemini-2.5-pro")
+        """
         genai.configure(api_key=api_key)
-        # Using flash model for speed during prototyping
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
-
+        self.model_name = model_id
+        self.model = genai.GenerativeModel(self.model_name)
+    
     def generate_response(self, messages: List[Dict[str, str]]) -> str:
         """
-        Generate a response from Gemini.
+        Generates a response from Gemini.
         
         Gemini has some quirks:
         - It uses 'model' role instead of 'assistant'
@@ -39,7 +47,7 @@ class GoogleGeminiClient(BaseLLMClient):
         # If there's a system prompt, recreate the model with it
         if system_prompt:
             self.model = genai.GenerativeModel(
-                'gemini-1.5-flash',
+                self.model_name,
                 system_instruction=system_prompt
             )
         

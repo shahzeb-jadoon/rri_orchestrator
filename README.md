@@ -6,18 +6,40 @@ A web-based platform for studying robot-robot interaction (RRI) through conversa
 
 This tool enables researchers to:
 - Configure multi-agent conversations between different LLMs
+- Run conversations automatically or manually control each turn
+- View and filter past experiments with a comprehensive history viewer
 - Define custom system prompts for each participant
 - Monitor conversations in real-time
 - Log all interactions to a database for analysis
-- Export conversation data for research
+- Export conversation data to CSV for external analysis
 
 ## Features
 
+### Core Functionality
 - **Multi-Model Support**: Currently supports Google Gemini and OpenAI GPT models
-- **Modular Architecture**: Easy to add new LLM providers
+- **Conversation Modes**:
+  - **Manual Mode**: Step through conversations turn-by-turn with full control
+  - **Automatic Mode**: Run entire conversations hands-free until completion
+- **Turn Limits**: Set maximum turns to control API costs
 - **Real-time Monitoring**: Watch conversations unfold in a chat interface
+- **Stop Controls**: Pause automatic conversations at any time
+
+### Data Management
+- **History Viewer**: Browse all past experiments with detailed metadata
+- **Advanced Filtering**: 
+  - Filter by model combinations
+  - Search by keywords in conversation content
+- **CSV Export**: 
+  - Export individual experiments
+  - Export all experiments
+  - Export filtered results
+  - Timestamped filenames for easy organization
 - **Data Persistence**: All conversations logged to SQLite database
+
+### Technical
+- **Modular Architecture**: Easy to add new LLM providers
 - **Password Protection**: Simple authentication to protect API keys
+- **Database Logging**: Complete conversation history with timestamps
 
 ## Quick Start
 
@@ -58,16 +80,132 @@ cp .env.example .env
 ### Running the Application
 
 ```bash
+# Using the new enhanced version (recommended)
+streamlit run app_new.py
+
+# Or using the original version
 streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
 
+## Usage Guide
+
+### Starting a New Conversation
+
+**Method 1: Automatic Mode (Recommended for long conversations)**
+1. Select "💬 New Conversation" from sidebar
+2. Choose "Automatic" conversation mode
+3. Select Model A and Model B
+4. Set max turns (e.g., 10)
+5. Enter system prompts for both models
+6. Click "🚀 Start New Experiment"
+7. Type your initial prompt
+8. Watch the conversation unfold automatically!
+9. Use "⏹️ Stop" button to pause if needed
+
+**Method 2: Manual Mode (For step-by-step control)**
+1. Select "Manual" conversation mode
+2. Configure models and prompts as above
+3. After each exchange, click "Continue Conversation"
+4. Manually control the pace of the conversation
+
+### Viewing Past Conversations
+
+1. Click "📚 View History" in sidebar navigation
+2. Browse all your experiments
+3. Use filters to find specific conversations:
+   - **Model Pair Filter**: Select specific model combinations
+   - **Keyword Search**: Find conversations containing specific terms
+4. Click on any experiment to expand and view full details
+5. Read complete conversation transcripts with timestamps
+
+### Exporting Data
+
+**Export All Data:**
+1. Go to "📚 View History"
+2. Click "📊 Export All Experiments to CSV"
+3. Download button will appear
+4. CSV file includes all experiments with full metadata
+
+**Export Filtered Data:**
+1. Apply filters (model pair, keywords)
+2. Click "📊 Export Filtered Results to CSV"
+3. Download only the experiments that match your filters
+
+**Export Single Experiment:**
+1. Expand an experiment in the history view
+2. Click "📥 Export Experiment #X"
+3. Download CSV for just that conversation
+
+**CSV Format:**
+- `experiment_id`: Unique identifier
+- `experiment_start_time`: When experiment began
+- `model_a_name`, `model_b_name`: Models used
+- `turn_number`: Which turn (0 for initial, 1, 2, 3...)
+- `speaker`: Who sent the message
+- `timestamp`: Exact time message was sent
+- `message_content`: Full message text
+- `model_a_system_prompt`, `model_b_system_prompt`: System prompts used
+- `max_turns`: Maximum turns configured
+
+### Running Batch Experiments (CLI)
+
+For systematic research with multiple prompts, use the batch experiment runner:
+
+**Basic Usage:**
+```bash
+# Create a prompts file (one prompt per line)
+cat > my_prompts.txt << 'EOF'
+Discuss the ethical implications of AI in healthcare.
+What are the trade-offs between privacy and convenience?
+Should social media platforms be regulated?
+EOF
+
+# Run dry test first
+python run_batch_experiments.py my_prompts.txt \
+  --provider-a gemini \
+  --provider-b openai \
+  --model-a "gemini-2.5-pro" \
+  --model-b "gpt-4o" \
+  --turns 3 \
+  --dry-run
+
+# Run actual experiments
+python run_batch_experiments.py my_prompts.txt \
+  --provider-a gemini \
+  --provider-b openai \
+  --turns 3
+```
+
+**Flip Mode (A/B Testing):**
+```bash
+# Run each prompt twice: A→B then B→A
+python run_batch_experiments.py my_prompts.txt \
+  --provider-a gemini \
+  --provider-b openai \
+  --turns 3 \
+  --flip
+```
+
+**Available Options:**
+- `prompts_file` - Path to prompts file (required, positional)
+- `--provider-a`, `--provider-b` - LLM providers (`gemini` or `openai`)
+- `--model-a`, `--model-b` - Specific model variants (see model_config.py)
+- `--turns` or `--max-turns` - Maximum conversation turns (default: 5)
+- `--flip` - Run experiments twice with swapped model positions
+- `--dry-run` - Test without creating experiments
+- `--prefix` - Experiment name prefix (default: "Batch")
+- `--quiet` - Suppress progress messages
+
+See `example_prompts.txt` for a sample prompt file.
+
 ## Project Structure
 
 ```
 rri_orchestrator/
-├── app.py                  # Main Streamlit application
+├── app_new.py              # Enhanced Streamlit app (Stage 2)
+├── app.py                  # Original Streamlit app (Stage 1)
 ├── database.py             # Database operations
 ├── llm_clients/            # LLM client implementations
 │   ├── __init__.py
@@ -76,15 +214,12 @@ rri_orchestrator/
 │   └── openai.py          # OpenAI client
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variable template
-└── README.md              # This file
+├── README.md              # This file
+├── SETUP_GUIDE.md         # Detailed setup instructions
+├── CONVERSATION_FLOW.md   # How conversations work
+├── PROJECT_PLAN.md        # Development roadmap
+└── STAGE2_SUMMARY.md      # Stage 2 features documentation
 ```
-
-## Usage
-
-1. **Start New Experiment**: Use the sidebar to select models and define system prompts
-2. **Begin Conversation**: Type a message to start the interaction between models
-3. **Monitor**: Watch as models respond to each other in turn
-4. **Data**: All messages are automatically saved to `rri_lab.db`
 
 ## Adding New LLM Providers
 
@@ -97,14 +232,26 @@ To add support for a new LLM:
 
 ## Development Roadmap
 
-### Stage 1 (Current)
+### Stage 1 ✅ Complete
 - ✅ Basic conversation orchestration
 - ✅ Support for Google Gemini and OpenAI
 - ✅ SQLite logging
 - ✅ Simple authentication
+- ✅ Turn limits for cost control
 
-### Stage 2 (Planned)
+### Stage 2 ✅ Complete
+- ✅ Automatic conversation mode
+- ✅ Manual conversation mode
+- ✅ History viewer with filtering
+- ✅ CSV export functionality
+- ✅ Keyword search in conversations
+- ✅ Progress indicators
+
+### Stage 3 (Next)
+- [ ] Add Anthropic Claude support
+- [ ] Add Meta Llama support
 - [ ] Docker containerization
+- [ ] Deployment to server
 - [ ] Deployment on lab server
 - [ ] Export to CSV functionality
 - [ ] Conversation analysis tools
