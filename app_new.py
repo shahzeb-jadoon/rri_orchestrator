@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 # Import our custom modules
 from core import database
 from config import model_config
+from config.model_config import get_client
 from clients.base import BaseLLMClient
 from clients.gemini import GoogleGeminiClient
 from clients.openai import OpenAIClient
@@ -71,30 +72,16 @@ def get_llm_client(provider: str, model_variant: str) -> BaseLLMClient | None:
     if cache_key in st.session_state:
         return st.session_state[cache_key]
     
-    # Create new client
-    client = None
-    
-    if provider == "gemini":
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            st.error("GOOGLE_API_KEY not found in .env file.")
-            return None
-        model_id = model_config.get_model_id("gemini", model_variant)
-        client = GoogleGeminiClient(api_key=api_key, model_id=model_id)
-    
-    elif provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            st.error("OPENAI_API_KEY not found in .env file.")
-            return None
-        model_id = model_config.get_model_id("openai", model_variant)
-        client = OpenAIClient(api_key=api_key, model_id=model_id)
-    
-    # Cache the client
-    if client:
+    # Create new client using centralized factory
+    try:
+        client = get_client(provider, model_variant)
+        # Cache the client
         st.session_state[cache_key] = client
-    
-    return client
+        return client
+    except ValueError as e:
+        st.error(f"Failed to create LLM client: {str(e)}")
+        return None
+
 
 # --- CSV Export Functionality ---
 

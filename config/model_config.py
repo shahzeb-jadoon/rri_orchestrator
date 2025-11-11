@@ -3,6 +3,9 @@ Model configurations for all supported LLM providers.
 This file defines the available models for each provider.
 """
 
+import os
+from typing import Optional
+
 # Google Gemini Models
 # Based on the output from check_models.py (November 2025)
 GEMINI_MODELS = {
@@ -129,3 +132,44 @@ def get_model_id(provider: str, model_key: str) -> str:
     elif provider == "openai":
         return OPENAI_MODELS.get(model_key, {}).get("model_id", model_key)
     return model_key
+
+def get_client(provider: str, variant: str, api_key: Optional[str] = None):
+    """
+    Factory function to create an LLM client based on provider and variant.
+    
+    Args:
+        provider: Provider key ("gemini" or "openai")
+        variant: Model variant key from the config
+        api_key: Optional API key (if None, will read from environment)
+        
+    Returns:
+        Instance of the appropriate LLM client
+        
+    Raises:
+        ValueError: If provider is unsupported or API key is missing
+    """
+    # Import clients here to avoid circular imports
+    from clients import GoogleGeminiClient, OpenAIClient
+    
+    if provider == "gemini":
+        # Get API key from parameter or environment
+        key = api_key or os.getenv("GOOGLE_API_KEY")
+        if not key:
+            raise ValueError("GOOGLE_API_KEY environment variable not set")
+        
+        # Get the actual model ID from config
+        model_id = get_model_id(provider, variant)
+        return GoogleGeminiClient(api_key=key, model_name=model_id)
+        
+    elif provider == "openai":
+        # Get API key from parameter or environment
+        key = api_key or os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        # Get the actual model ID from config
+        model_id = get_model_id(provider, variant)
+        return OpenAIClient(api_key=key, model_name=model_id)
+        
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import our modules
 from core import database
 from config import model_config
+from config.model_config import get_client
 from clients.gemini import GoogleGeminiClient
 from clients.openai import OpenAIClient
 
@@ -69,34 +70,14 @@ class BatchExperimentRunner:
         self.verbose = verbose
         self.dry_run = dry_run
         
-        # Initialize clients
-        self.client_a = self._get_client(provider_a, model_a_variant)
-        self.client_b = self._get_client(provider_b, model_b_variant)
-        
-        if not self.client_a or not self.client_b:
-            raise ValueError("Failed to initialize LLM clients. Check API keys.")
+        # Initialize clients using centralized factory
+        try:
+            self.client_a = get_client(provider_a, model_a_variant)
+            self.client_b = get_client(provider_b, model_b_variant)
+        except ValueError as e:
+            raise ValueError(f"Failed to initialize LLM clients: {str(e)}")
         
         self.results = []
-    
-    def _get_client(self, provider: str, model_variant: str):
-        """Get LLM client instance."""
-        if provider == "gemini":
-            api_key = os.getenv("GOOGLE_API_KEY")
-            if not api_key:
-                print(f"ERROR: GOOGLE_API_KEY not found in .env")
-                return None
-            model_id = model_config.get_model_id("gemini", model_variant)
-            return GoogleGeminiClient(api_key=api_key, model_id=model_id)
-        
-        elif provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                print(f"ERROR: OPENAI_API_KEY not found in .env")
-                return None
-            model_id = model_config.get_model_id("openai", model_variant)
-            return OpenAIClient(api_key=api_key, model_id=model_id)
-        
-        return None
     
     def run_single_experiment(
         self,
