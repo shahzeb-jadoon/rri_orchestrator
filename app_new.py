@@ -391,6 +391,105 @@ def show_deleted_experiments():
                     # This would need confirmation in production
                     st.error("Permanent deletion requires confirmation. Coming soon...")
 
+# --- Helper Functions for Pause Control ---
+
+def send_researcher_message(message: str, target: str):
+    """
+    Send a researcher interjection to one or both models.
+    Does NOT count as a model's turn.
+    
+    Args:
+        message: The researcher's message
+        target: "model_a", "model_b", or "both"
+    """
+    exp_id = st.session_state.experiment_id
+    
+    # Log to database with special role
+    database.log_message(exp_id, "researcher_interjection", message)
+    
+    # Add to display messages
+    st.session_state.messages.append({
+        "role": "researcher", 
+        "content": f"[Researcher Interjection to {target.upper()}] {message}"
+    })
+    
+    # Add to appropriate model histories
+    if target == "model_a" or target == "both":
+        st.session_state.model_a_history.append({"role": "user", "content": message})
+    
+    if target == "model_b" or target == "both":
+        st.session_state.model_b_history.append({"role": "user", "content": message})
+    
+    st.success(f"✅ Message sent to {target.upper()}")
+
+def submit_manual_override(response: str, model: str):
+    """
+    Submit a manual response AS a model (instead of API call).
+    This COUNTS as that model's turn.
+    
+    Args:
+        response: The manual response text
+        model: "model_a" or "model_b"
+    """
+    exp_id = st.session_state.experiment_id
+    
+    if model == "model_a":
+        model_name = model_config.PROVIDERS[st.session_state.provider_a]
+        model_display = st.session_state.model_a_display
+        
+        # Log to database
+        database.log_message(exp_id, model_name, f"[Manual Override] {response}")
+        
+        # Add to display
+        st.session_state.messages.append({
+            "role": model_display,
+            "content": f"[Manual Override] {response}"
+        })
+        
+        # Update histories
+        st.session_state.model_a_history.append({"role": "assistant", "content": response})
+        st.session_state.model_b_history.append({"role": "user", "content": response})
+        
+        # Update last speaker
+        st.session_state.last_speaker = model_display
+        
+        # If this was completing a paused turn, increment turn count
+        if st.session_state.get("mid_turn_pause", False):
+            st.session_state.turn_count += 1
+            st.session_state.mid_turn_pause = False
+    
+    else:  # model_b
+        model_name = model_config.PROVIDERS[st.session_state.provider_b]
+        model_display = st.session_state.model_b_display
+        
+        # Log to database
+        database.log_message(exp_id, model_name, f"[Manual Override] {response}")
+        
+        # Add to display
+        st.session_state.messages.append({
+            "role": model_display,
+            "content": f"[Manual Override] {response}"
+        })
+        
+        # Update histories
+        st.session_state.model_b_history.append({"role": "assistant", "content": response})
+        st.session_state.model_a_history.append({"role": "user", "content": response})
+        
+        # Increment turn count (Model B completes the turn)
+        st.session_state.turn_count += 1
+        st.session_state.mid_turn_pause = False
+    
+    # Check if limit reached
+    if st.session_state.turn_count >= st.session_state.max_turns:
+        st.session_state.limit_reached = True
+        database.update_experiment_status(exp_id, "completed")
+    
+    # Clear pause state
+    st.session_state.paused = False
+    st.session_state.stop_requested = False
+    
+    st.success(f"✅ Submitted as {model_display}'s response")
+
 # --- Main Conversation Page ---
 
 def conversation_page():
@@ -404,11 +503,11 @@ def conversation_page():
     with st.sidebar:
         st.header("🔬 Experiment Setup")
         
-        # Conversation Mode Selection
+        # Conversation Mode
         conv_mode = st.radio(
             "Conversation Mode",
-            ["Manual", "Automatic"],
-            help="Manual: Click 'Continue' after each exchange. Automatic: Runs all turns automatically."
+            ["Automatic", "Manual"],
+            help="Automatic: Runs all turns automatically (can pause anytime). Manual: Click 'Continue' after each exchange (can pause anytime)."
         )
         
         # Provider and Model Selection for Model A
@@ -529,6 +628,9 @@ def conversation_page():
             st.session_state.conversation_mode = conv_mode
             st.session_state.auto_running = False
             st.session_state.stop_requested = False
+            st.session_state.paused = False
+            st.session_state.mid_turn_pause = False
+            st.session_state.last_speaker = None
             st.success(f"✅ Started experiment #{exp_id}: {experiment_name}")
             st.rerun()
 
@@ -541,7 +643,7 @@ def conversation_page():
     # Display current experiment info
     st.markdown(
         f"**Experiment:** {st.session_state.get('experiment_name', 'Unnamed')} (#{st.session_state.experiment_id}) | "
-        f"**Mode:** {st.session_state.get('conversation_mode', 'Manual')} | "
+        f"**Mode:** {st.session_state.get('conversation_mode', 'Automatic')} | "
         f"**Turn:** {st.session_state.turn_count}/{st.session_state.max_turns}"
     )
 
@@ -550,27 +652,177 @@ def conversation_page():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Stop button for automatic mode
-    if st.session_state.get("conversation_mode") == "Automatic" and st.session_state.get("auto_running", False):
-        if st.button("⏹️ Stop Conversation"):
-            st.session_state.stop_requested = True
+    # Pause button - shows when conversation is active (not paused)
+    conversation_active = (
+        (st.session_state.get("conversation_mode") == "Automatic" and st.session_state.get("auto_running", False)) or
+        (st.session_state.turn_count > 0 and not st.session_state.get("paused", False))
+    )
+    
+    if conversation_active and not st.session_state.get("paused", False):
+        if st.button("⏸️ Pause Conversation", key="pause_btn"):
+            st.session_state.paused = True
             st.session_state.auto_running = False
-            st.warning("⏸️ Conversation stopped by user.")
+            st.session_state.stop_requested = True
+            st.warning("⏸️ Conversation paused.")
             st.rerun()
+
+    # Pause Control Panel - shows when paused
+    if st.session_state.get("paused", False):
+        st.markdown("---")
+        st.subheader("⏸️ Conversation Paused")
+        
+        # Show last speaker info if mid-turn pause
+        if st.session_state.get("mid_turn_pause", False) and st.session_state.get("last_speaker"):
+            st.info(f"⚠️ Paused after {st.session_state.last_speaker}'s response. {st.session_state.get('next_speaker', 'Next model')} hasn't responded yet.")
+        
+        # Control Panel Tabs
+        tab1, tab2, tab3, tab4 = st.tabs(["▶️ Resume", "💬 Researcher Interjection", "✍️ Manual Override", "⚙️ Settings"])
+        
+        with tab1:
+            st.markdown("### Resume Conversation")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶️ Resume", help="Continue from where you left off"):
+                    st.session_state.paused = False
+                    st.session_state.stop_requested = False
+                    st.session_state.mid_turn_pause = False
+                    if st.session_state.get("conversation_mode") == "Automatic":
+                        st.session_state.auto_running = True
+                    st.rerun()
+            with col2:
+                if st.button("🛑 End Conversation", help="End experiment and return to setup"):
+                    database.update_experiment_status(st.session_state.experiment_id, "completed")
+                    st.success("✅ Experiment ended. View it in the 'History' tab.")
+                    st.session_state.messages = []
+                    st.session_state.paused = False
+                    st.rerun()
+        
+        with tab2:
+            st.markdown("### 💬 Send Message as Researcher")
+            st.caption("Send a message to one or both models. This does NOT count as a model's turn.")
+            
+            researcher_msg = st.text_area("Your message:", key="researcher_interjection", height=100)
+            
+            if researcher_msg:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button(f"→ Send to {st.session_state.model_a_display} only"):
+                        send_researcher_message(researcher_msg, target="model_a")
+                        st.rerun()
+                with col2:
+                    if st.button(f"→ Send to {st.session_state.model_b_display} only"):
+                        send_researcher_message(researcher_msg, target="model_b")
+                        st.rerun()
+                with col3:
+                    if st.button("→ Send to BOTH models"):
+                        send_researcher_message(researcher_msg, target="both")
+                        st.rerun()
+        
+        with tab3:
+            st.markdown("### ✍️ Respond AS a Model")
+            st.caption("Type a response instead of calling the API. This COUNTS as that model's turn.")
+            
+            # Determine which model should respond next
+            next_model = "model_a" if st.session_state.get("mid_turn_pause", False) and st.session_state.get("last_speaker") == st.session_state.model_a_display else "model_b"
+            next_model_name = st.session_state.model_b_display if next_model == "model_b" else st.session_state.model_a_display
+            
+            manual_response = st.text_area(f"Respond as {next_model_name}:", key="manual_override", height=150)
+            
+            if manual_response:
+                if st.button(f"✅ Submit as {next_model_name}'s response"):
+                    submit_manual_override(manual_response, next_model)
+                    st.rerun()
+        
+        with tab4:
+            st.markdown("### ⚙️ Conversation Settings")
+            
+            # Mode switching
+            st.markdown("**Switch Mode:**")
+            current_mode = st.session_state.get("conversation_mode", "Automatic")
+            new_mode = st.radio(
+                "Conversation Mode",
+                ["Automatic", "Manual"],
+                index=0 if current_mode == "Automatic" else 1,
+                key="mode_switcher",
+                help="Automatic: Continues automatically. Manual: Requires clicking 'Continue' button."
+            )
+            if new_mode != current_mode:
+                if st.button("💾 Apply Mode Change"):
+                    st.session_state.conversation_mode = new_mode
+                    st.success(f"✅ Switched to {new_mode} mode")
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            # Adjust turn limit
+            st.markdown("**Adjust Turn Limit:**")
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                new_max_turns = st.number_input(
+                    "Maximum Turns",
+                    min_value=st.session_state.turn_count + 1,
+                    value=st.session_state.max_turns,
+                    step=1,
+                    key="turn_adjuster"
+                )
+            with col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("💾 Update Limit"):
+                    st.session_state.max_turns = new_max_turns
+                    st.success(f"✅ Turn limit set to {new_max_turns}")
+                    st.rerun()
+            
+            # Quick add buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("➕ Add 1 turn"):
+                    st.session_state.max_turns += 1
+                    st.rerun()
+            with col2:
+                if st.button("➕ Add 5 turns"):
+                    st.session_state.max_turns += 5
+                    st.rerun()
+            with col3:
+                if st.button("➕ Add 10 turns"):
+                    st.session_state.max_turns += 10
+                    st.rerun()
+        
+        st.markdown("---")
+        return  # Don't show other controls when paused
 
     # Check if the turn limit has been reached
     if st.session_state.get("limit_reached", False):
         st.info("🏁 Turn limit reached.")
-        col1, col2 = st.columns(2)
+        
+        # Dynamic turn adjustment
+        st.markdown("**Add more turns to continue:**")
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            if st.button("➕ Continue for 5 more turns"):
-                st.session_state.max_turns += 5
+            if st.button("➕ Add 1 turn"):
+                st.session_state.max_turns += 1
                 st.session_state.limit_reached = False
                 st.rerun()
         with col2:
-            if st.button("✅ End Experiment"):
-                st.success("Experiment completed! View it in the 'History' tab.")
-                st.session_state.messages = []
+            if st.button("➕ Add 5 turns"):
+                st.session_state.max_turns += 5
+                st.session_state.limit_reached = False
+                st.rerun()
+        with col3:
+            if st.button("➕ Add 10 turns"):
+                st.session_state.max_turns += 10
+                st.session_state.limit_reached = False
+                st.rerun()
+        with col4:
+            custom_turns = st.number_input("Custom:", min_value=1, value=5, step=1, key="custom_turns")
+            if st.button(f"➕ Add {custom_turns}"):
+                st.session_state.max_turns += custom_turns
+                st.session_state.limit_reached = False
+                st.rerun()
+        
+        if st.button("✅ End Experiment"):
+            database.update_experiment_status(st.session_state.experiment_id, "completed")
+            st.success("Experiment completed! View it in the 'History' tab.")
+            st.session_state.messages = []
         return
 
     # Allow starting conversation without researcher message
@@ -671,6 +923,10 @@ def run_conversation_turn():
                 st.session_state.model_b_history.append({"role": "user", "content": response_a})
                 
                 st.markdown(response_a)
+                
+                # Track last speaker for mid-turn pause
+                st.session_state.last_speaker = st.session_state.model_a_display
+                st.session_state.next_speaker = st.session_state.model_b_display
 
             except Exception as e:
                 error_msg = f"Error from {st.session_state.model_a_display}: {str(e)}"
@@ -692,7 +948,16 @@ def run_conversation_turn():
                     st.session_state.messages.append({"role": "error", "content": error_msg, "error_type": error_type})
                 
                 st.session_state.auto_running = False
+                st.session_state.paused = True
                 return
+
+    # Check if pause was requested after Model A (immediate stop)
+    if st.session_state.get("stop_requested", False):
+        st.session_state.mid_turn_pause = True
+        st.session_state.paused = True
+        st.warning(f"⏸️ Paused after {st.session_state.model_a_display}'s response.")
+        st.rerun()
+        return
 
     # Small delay for automatic mode visibility
     if st.session_state.get("conversation_mode") == "Automatic":
