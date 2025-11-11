@@ -159,7 +159,7 @@ def get_client(provider: str, variant: str, api_key: Optional[str] = None):
         
         # Get the actual model ID from config
         model_id = get_model_id(provider, variant)
-        return GoogleGeminiClient(api_key=key, model_name=model_id)
+        return GoogleGeminiClient(api_key=key, model_id=model_id)
         
     elif provider == "openai":
         # Get API key from parameter or environment
@@ -169,7 +169,7 @@ def get_client(provider: str, variant: str, api_key: Optional[str] = None):
         
         # Get the actual model ID from config
         model_id = get_model_id(provider, variant)
-        return OpenAIClient(api_key=key, model_name=model_id)
+        return OpenAIClient(api_key=key, model_id=model_id)
         
     else:
         raise ValueError(f"Unsupported provider: {provider}")
