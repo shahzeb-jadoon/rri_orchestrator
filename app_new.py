@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Import our custom modules
-import database
-import model_config
-from llm_clients.base import BaseLLMClient
-from llm_clients.gemini import GoogleGeminiClient
-from llm_clients.openai import OpenAIClient
+from core import database
+from config import model_config
+from clients.base import BaseLLMClient
+from clients.gemini import GoogleGeminiClient
+from clients.openai import OpenAIClient
 
 # Load environment variables from .env file
 load_dotenv()
@@ -763,11 +763,6 @@ def run_conversation_turn():
                 # Append to messages if it exists
                 if hasattr(st.session_state, 'messages'):
                     st.session_state.messages.append({"role": "error", "content": error_msg, "error_type": error_type})
-                
-                st.session_state.auto_running = False
-                return
-                database.update_experiment_status(exp_id, "error")
-                st.session_state.messages.append({"role": "error", "content": error_msg, "error_type": error_type})
                 
                 st.session_state.auto_running = False
                 return

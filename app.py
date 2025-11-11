@@ -3,10 +3,10 @@ import os
 from dotenv import load_dotenv
 
 # Import our custom modules
-import database
-from llm_clients.base import BaseLLMClient
-from llm_clients.gemini import GoogleGeminiClient
-from llm_clients.openai import OpenAIClient
+from core import database
+from clients.base import BaseLLMClient
+from clients.gemini import GoogleGeminiClient
+from clients.openai import OpenAIClient
 
 # Load environment variables from .env file
 load_dotenv()

@@ -3,7 +3,13 @@ Test script to verify database functionality.
 Run this before testing the full application.
 """
 
-import database
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core import database
 
 print("Testing database setup...")
 

@@ -20,11 +20,14 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 # Import our modules
-import database
-import model_config
-from llm_clients.gemini import GoogleGeminiClient
-from llm_clients.openai import OpenAIClient
+from core import database
+from config import model_config
+from clients.gemini import GoogleGeminiClient
+from clients.openai import OpenAIClient
 
 # Load environment variables
 load_dotenv()
@@ -148,18 +151,6 @@ class BatchExperimentRunner:
                 "turns": 0,
                 "dry_run": True
             }
-        
-        # Create experiment in database
-        exp_id = database.create_experiment(
-            model_config.PROVIDERS[self.provider_a],
-            model_config.PROVIDERS[self.provider_b],
-            prompt_a,
-            prompt_b,
-            self.max_turns,
-            model_a_variant=self.model_a_variant,
-            model_b_variant=self.model_b_variant,
-            name=experiment_name
-        )
         
         # Create experiment in database
         exp_id = database.create_experiment(

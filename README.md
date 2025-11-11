@@ -163,7 +163,7 @@ Should social media platforms be regulated?
 EOF
 
 # Run dry test first
-python run_batch_experiments.py my_prompts.txt \
+python scripts/run_batch_experiments.py my_prompts.txt \
   --provider-a gemini \
   --provider-b openai \
   --model-a "gemini-2.5-pro" \
@@ -172,10 +172,33 @@ python run_batch_experiments.py my_prompts.txt \
   --dry-run
 
 # Run actual experiments
-python run_batch_experiments.py my_prompts.txt \
+python scripts/run_batch_experiments.py my_prompts.txt \
   --provider-a gemini \
   --provider-b openai \
   --turns 3
+```
+
+**Flip Mode (A/B Testing):**
+```bash
+# Run each prompt twice: A→B then B→A
+python scripts/run_batch_experiments.py my_prompts.txt \
+  --provider-a gemini \
+  --provider-b openai \
+  --turns 3 \
+  --flip
+```
+
+**Available Options:**
+- `prompts_file` - Path to prompts file (required, positional)
+- `--provider-a`, `--provider-b` - LLM providers (`gemini` or `openai`)
+- `--model-a`, `--model-b` - Specific model variants (see config/model_config.py)
+- `--turns` or `--max-turns` - Maximum conversation turns (default: 5)
+- `--flip` - Run experiments twice with swapped model positions
+- `--dry-run` - Test without creating experiments
+- `--prefix` - Experiment name prefix (default: "Batch")
+- `--quiet` - Suppress progress messages
+
+See `data/example_prompts.txt` for a sample prompt file.
 ```
 
 **Flip Mode (A/B Testing):**
@@ -198,30 +221,44 @@ python run_batch_experiments.py my_prompts.txt \
 - `--prefix` - Experiment name prefix (default: "Batch")
 - `--quiet` - Suppress progress messages
 
-See `example_prompts.txt` for a sample prompt file.
+See `data/example_prompts.txt` for a sample prompt file.
 
 ## Project Structure
 
 ```
 rri_orchestrator/
-├── llm_clients/               # LLM client implementations
-│   ├── __init__.py           # Package initializer
-│   ├── base.py               # Abstract base class for all clients
-│   ├── gemini.py             # Google Gemini client
-│   └── openai.py             # OpenAI client
-├── app_new.py                 # Enhanced Streamlit app (recommended)
 ├── app.py                     # Original Streamlit app (Stage 1)
-├── database.py                # SQLite database operations with migrations
-├── model_config.py            # Centralized model configuration (15 variants)
-├── run_batch_experiments.py   # CLI tool for batch experiment automation
-├── check_models.py            # Utility to verify available models
-├── test_database.py           # Database testing utility
-├── example_prompts.txt        # Sample prompts for batch experiments
+├── app_new.py                 # Enhanced Streamlit app (recommended)
 ├── requirements.txt           # Python dependencies
 ├── .env.example              # Environment variable template
 ├── .env                      # Your API keys (gitignored)
 ├── .gitignore                # Git ignore patterns
 ├── README.md                 # Complete documentation (this file)
+│
+├── clients/                   # LLM client implementations
+│   ├── __init__.py           # Package exports
+│   ├── base.py               # Abstract base class
+│   ├── gemini.py             # Google Gemini client
+│   └── openai.py             # OpenAI client
+│
+├── config/                    # Configuration files
+│   ├── __init__.py
+│   └── model_config.py       # Model definitions (15 variants)
+│
+├── core/                      # Core business logic
+│   ├── __init__.py
+│   └── database.py           # SQLite operations with migrations
+│
+├── scripts/                   # CLI utilities
+│   ├── run_batch_experiments.py   # Batch experiment automation
+│   └── check_models.py            # Verify available models
+│
+├── tests/                     # Test files
+│   └── test_database.py      # Database testing utility
+│
+├── data/                      # Example data
+│   └── example_prompts.txt   # Sample prompts for batch experiments
+│
 └── rri_lab.db                # SQLite database (gitignored, your data)
 ```
 
@@ -229,10 +266,11 @@ rri_orchestrator/
 
 To add support for a new LLM:
 
-1. Create a new client file in `llm_clients/` (e.g., `claude.py`)
+1. Create a new client file in `clients/` (e.g., `claude.py`)
 2. Inherit from `BaseLLMClient` and implement `generate_response()`
-3. Add the model configuration to `model_config.py`
+3. Add the model configuration to `config/model_config.py`
 4. Update the provider selection in `app_new.py`
+5. Export the new client in `clients/__init__.py`
 4. Add the API key to `.env`
 
 ## Development Roadmap
