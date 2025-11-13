@@ -466,8 +466,28 @@ def show_active_experiments():
     
     for exp in filtered_experiments:
         exp_name = exp.get('name') or f"Experiment #{exp['id']}"
-        model_a_display = f"{exp['model_a_name']} ({exp.get('model_a_variant', 'default')})"
-        model_b_display = f"{exp['model_b_name']} ({exp.get('model_b_variant', 'default')})"
+        # Attempt to show the specific model variant (human-friendly) next to the provider
+        def _infer_provider_key(exp_name, variant_key):
+            # Reverse-lookup by provider display name
+            for pk, pv in model_config.PROVIDERS.items():
+                if pv == exp_name:
+                    return pk
+            # Fallback: infer from variant prefix
+            if variant_key:
+                if variant_key.startswith('gemini'):
+                    return 'gemini'
+                if variant_key.startswith('gpt') or variant_key.startswith('gpt-'):
+                    return 'openai'
+            return None
+
+        a_provider_key = _infer_provider_key(exp['model_a_name'], exp.get('model_a_variant'))
+        b_provider_key = _infer_provider_key(exp['model_b_name'], exp.get('model_b_variant'))
+
+        a_variant_display = model_config.get_model_display_name(a_provider_key, exp.get('model_a_variant')) if a_provider_key else (exp.get('model_a_variant') or 'default')
+        b_variant_display = model_config.get_model_display_name(b_provider_key, exp.get('model_b_variant')) if b_provider_key else (exp.get('model_b_variant') or 'default')
+
+        model_a_display = f"{a_variant_display} ({exp['model_a_name']})"
+        model_b_display = f"{b_variant_display} ({exp['model_b_name']})"
         
         with st.expander(
             f"🔬 {exp_name} - {model_a_display} ↔ {model_b_display} "
@@ -545,6 +565,16 @@ def show_active_experiments():
             # Show conversation
             st.markdown("---")
             st.markdown("**💬 Conversation:**")
+            
+            # Display system prompts first (these don't count as turns)
+            with st.expander("🔧 System Prompts (expand to view)", expanded=False):
+                st.markdown(f"**{a_variant_display} System Prompt:**")
+                st.info(exp['model_a_prompt'])
+                st.markdown(f"**{b_variant_display} System Prompt:**")
+                st.info(exp['model_b_prompt'])
+            
+            st.markdown("---")
+            
             messages = database.get_experiment_messages(exp['id'])
             
             for msg in messages:
@@ -554,16 +584,29 @@ def show_active_experiments():
                 is_error = msg.get('is_error', 0)
                 error_type = msg.get('error_type')
                 
+                # Map stored sender_role to full model variant display name
+                display_name = role
+                if role == exp['model_a_name']:
+                    display_name = a_variant_display
+                elif role == exp['model_b_name']:
+                    display_name = b_variant_display
+                elif '(Override)' in role:
+                    # Handle manual overrides - extract base model name and replace
+                    if exp['model_a_name'] in role:
+                        display_name = role.replace(exp['model_a_name'], a_variant_display)
+                    elif exp['model_b_name'] in role:
+                        display_name = role.replace(exp['model_b_name'], b_variant_display)
+                
                 if is_error:
                     # Display error messages prominently
                     error_emoji = "⚠️" if error_type == "rate_limit" else "❌"
                     st.error(f"{error_emoji} **ERROR** ({timestamp}) [{error_type}]: {content}")
-                elif role == 'researcher':
+                elif role == 'researcher' or role == 'researcher_interjection':
                     st.info(f"**👤 Researcher** ({timestamp}): {content}")
-                elif role == exp['model_a_name']:
-                    st.success(f"**🤖 {role}** ({timestamp}): {content}")
+                elif role == exp['model_a_name'] or exp['model_a_name'] in role:
+                    st.success(f"**🤖 {display_name}** ({timestamp}): {content}")
                 else:
-                    st.warning(f"**🤖 {role}** ({timestamp}): {content}")
+                    st.warning(f"**🤖 {display_name}** ({timestamp}): {content}")
     
     # Pagination controls
     st.markdown("---")
@@ -1448,6 +1491,26 @@ def continue_conversation_page():
     conn.close()
     
     st.title(f"▶️ Continue: {exp.get('name') or f'Experiment #{exp_id}'}")
+
+    # Show specific model variant details for clarity
+    def _infer_provider_key(exp_name, variant_key):
+        for pk, pv in model_config.PROVIDERS.items():
+            if pv == exp_name:
+                return pk
+        if variant_key:
+            if variant_key.startswith('gemini'):
+                return 'gemini'
+            if variant_key.startswith('gpt') or variant_key.startswith('gpt-'):
+                return 'openai'
+        return None
+
+    a_pk = _infer_provider_key(exp.get('model_a_name'), exp.get('model_a_variant'))
+    b_pk = _infer_provider_key(exp.get('model_b_name'), exp.get('model_b_variant'))
+
+    a_var_disp = model_config.get_model_display_name(a_pk, exp.get('model_a_variant')) if a_pk else (exp.get('model_a_variant') or 'default')
+    b_var_disp = model_config.get_model_display_name(b_pk, exp.get('model_b_variant')) if b_pk else (exp.get('model_b_variant') or 'default')
+
+    st.markdown(f"**Models:** {a_var_disp} ({exp.get('model_a_name')}) ↔ {b_var_disp} ({exp.get('model_b_name')})")
     
     # Navigation back
     if st.button("← Back to History"):
@@ -1459,6 +1522,16 @@ def continue_conversation_page():
     
     # Display existing conversation
     st.subheader("📜 Previous Conversation")
+    
+    # Display system prompts first (these don't count as turns)
+    with st.expander("🔧 System Prompts (expand to view)", expanded=False):
+        st.markdown(f"**{a_var_disp} System Prompt:**")
+        st.info(exp.get('model_a_prompt'))
+        st.markdown(f"**{b_var_disp} System Prompt:**")
+        st.info(exp.get('model_b_prompt'))
+    
+    st.markdown("---")
+    
     messages = database.get_experiment_messages(exp_id)
     
     for msg in messages:
@@ -1467,11 +1540,24 @@ def continue_conversation_page():
         is_error = msg.get('is_error', 0)
         error_type = msg.get('error_type')
         
-        with st.chat_message("assistant" if role != "researcher" else "user"):
+        # Map stored sender_role to full model variant display name
+        display_name = role
+        if role == exp.get('model_a_name'):
+            display_name = a_var_disp
+        elif role == exp.get('model_b_name'):
+            display_name = b_var_disp
+        elif '(Override)' in role:
+            # Handle manual overrides - extract base model name and replace
+            if exp.get('model_a_name') in role:
+                display_name = role.replace(exp.get('model_a_name'), a_var_disp)
+            elif exp.get('model_b_name') in role:
+                display_name = role.replace(exp.get('model_b_name'), b_var_disp)
+        
+        with st.chat_message("assistant" if role != "researcher" and role != "researcher_interjection" else "user"):
             if is_error:
                 st.error(f"❌ [{error_type}] {content}")
             else:
-                st.markdown(f"**{role}**: {content}")
+                st.markdown(f"**{display_name}**: {content}")
     
     # Load conversation state if not already loaded
     if 'continued_experiment_id' not in st.session_state or st.session_state['continued_experiment_id'] != exp_id:
