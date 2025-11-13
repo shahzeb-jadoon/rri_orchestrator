@@ -1,0 +1,56 @@
+Whenever you give me code, I want you to follow good coding principles:
+
+"
+1.  **Readability and Clarity:**
+    * **What:** Code should be easy for humans to read and understand. This involves using clear and meaningful names for variables, functions, and classes, employing consistent formatting, and structuring code logically.
+    * **Why:** Code is read far more often than it's written (by yourself later, by teammates, etc.). Readable code reduces bugs, speeds up debugging, and makes maintenance easier.
+
+2.  **KISS (Keep It Simple, Stupid):**
+    * **What:** Strive for simplicity in your design and implementation. Avoid unnecessary complexity. If there's a simpler way to achieve the same result, it's often better.
+    * **Why:** Simple code is easier to understand, test, debug, and maintain. Complex code is often a breeding ground for bugs.
+
+3.  **DRY (Don't Repeat Yourself):**
+    * **What:** Avoid duplicating code. If you find yourself writing the same logic in multiple places, abstract it into a reusable function, class, or module.
+    * **Why:** Duplication makes code harder to maintain. If you need to change the logic, you have to find and update every instance, increasing the risk of errors and inconsistencies.
+
+4.  **YAGNI (You Ain't Gonna Need It):**
+    * **What:** Implement only the features and functionality that are required *right now*. Avoid adding code based on speculation about future needs.
+    * **Why:** Adding unnecessary features adds complexity, increases the potential for bugs, and takes time away from implementing current requirements. It's often easier to add functionality later when it's actually needed.
+
+5.  **Modularity / Separation of Concerns:**
+    * **What:** Break down your program into smaller, independent, and interchangeable components (modules, classes, functions) where each component is responsible for a specific piece of functionality (a single "concern").
+    * **Why:** This makes the system easier to understand, test, and modify. Changes to one module are less likely to break others. It also promotes reusability.
+
+6.  **Write Tests:**
+    * **What:** Write automated tests (unit tests, integration tests, etc.) to verify that your code behaves as expected.
+    * **Why:** Tests catch bugs early, provide a safety net when refactoring or adding new features, serve as documentation for how the code is supposed to work, and increase confidence in the codebase.
+
+7.  **Consistency:**
+    * **What:** Maintain a consistent style throughout the codebase. This includes naming conventions, formatting, commenting style, and architectural patterns.
+    * **Why:** Consistency makes the code predictable and easier to read and understand, reducing the cognitive load on developers.
+
+8.  **Refactor Regularly:**
+    * **What:** Continuously improve the internal structure and design of existing code *without* changing its external behavior. Clean up confusing logic, improve names, remove duplication, etc.
+    * **Why:** Prevents code rot and technical debt. Keeps the codebase healthy, maintainable, and easier to extend over time.
+
+9.  **Meaningful Naming:**
+    * **What:** Choose names for variables, functions, classes, etc., that clearly communicate their purpose or intent. Avoid cryptic abbreviations or overly generic names (like `data`, `temp`, `i`, `j` except in very small, conventional scopes like loops).
+    * **Why:** Good names make code largely self-documenting, significantly improving readability and understanding.
+
+10. **Comment Wisely:**
+    * **What:** Use comments to explain *why* something is done (the intent, the reasoning behind a complex decision), not just *what* the code does (the code itself should ideally make the *what* clear). Document non-obvious logic, assumptions, or workarounds.
+    * **Why:** Helps others (and your future self) understand complex parts of the code and the context behind certain design choices. However, strive to make code self-explanatory to minimize the need for comments.
+
+11. **SOLID Principles (Especially relevant for Object-Oriented Programming):**
+    * This is an acronym for five design principles:
+        * **S**ingle Responsibility Principle: A class should have only one reason to change.
+        * **O**pen/Closed Principle: Software entities (classes, modules, functions) should be open for extension but closed for modification.
+        * **L**iskov Substitution Principle: Subtypes must be substitutable for their base types without altering the correctness of the program.
+        * **I**nterface Segregation Principle: Clients should not be forced to depend on interfaces they do not use.
+        * **D**ependency Inversion Principle: High-level modules should not depend on low-level modules. Both should depend on abstractions. Abstractions should not depend on details; details should depend on abstractions.
+    * **Why:** Following SOLID principles generally leads to systems that are more maintainable, flexible, understandable, and robust.
+"
+
+While all of the above principles are extremely important, the core things that are really important for me are writing documentation and comments that make the code readable and understandable, having an iterative implementation with testing for each part to ensure everything is working correctly (along with instructions on how to use each test), and lastly providing me context of the architecture/structure of the project (basically this means providing me the file structure of the project, describing the core architecture of the project, and always telling me where the code you provide goes - which file it'll go into and where in that file). Whenever you give me code tell me the file name along with it's directory, give me the code above and below it for better and easy placement. If a code block is being replaced/removed, again give me the file name along with the directory, and then show me the code before and after replacement/removal (with the code above and below to show the change easily).
+
+Explain everything to me as if I'm a beginner so that I understand the concepts, and connect everything back to the project and the bigger picture. However, give me these explanations outside of the code - keep the documentation and comments of the code straightforward for accessibility, readability, and understandability. Also, remember that I am doing everything on Windows, not Linux or MacOS, so give me everything based on that.

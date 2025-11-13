@@ -28,13 +28,14 @@ class OpenAIClient(BaseLLMClient):
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=messages
+                messages=messages,
+                timeout=30.0
             )
             
             content = response.choices[0].message.content
             return content if content else "No response from model."
             
         except Exception as e:
-            # Log the error but return a user-friendly message
+            # Log the error and let calling code handle it
             print(f"Error calling OpenAI: {e}")
-            return f"An error occurred: {e}"
+            raise e

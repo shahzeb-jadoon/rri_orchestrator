@@ -44,31 +44,8 @@ def setup_database():
     );
     """)
     
-    # Migrate existing tables to add new columns if they don't exist
-    try:
-        cursor.execute("ALTER TABLE experiments ADD COLUMN name TEXT")
-    except:
-        pass  # Column already exists
-    
-    try:
-        cursor.execute("ALTER TABLE experiments ADD COLUMN deleted_at TEXT")
-    except:
-        pass
-    
-    try:
-        cursor.execute("ALTER TABLE experiments ADD COLUMN model_a_variant TEXT")
-    except:
-        pass
-    
-    try:
-        cursor.execute("ALTER TABLE experiments ADD COLUMN model_b_variant TEXT")
-    except:
-        pass
-    
-    try:
-        cursor.execute("ALTER TABLE experiments ADD COLUMN status TEXT DEFAULT 'completed'")
-    except:
-        pass
+    # Migrate existing experiments table
+    ensure_name_column_exists(cursor)
     
     # Store all messages from all experiments
     # experiment_id links back to the experiments table
@@ -85,19 +62,61 @@ def setup_database():
     );
     """)
     
-    # Add new columns to messages table if they don't exist
+    # Migrate existing messages table
+    ensure_target_column_exists(cursor)
+    
+    conn.commit()
+    conn.close()
+
+def ensure_name_column_exists(cursor):
+    """
+    Migration: Add columns to experiments table if they don't exist.
+    """
+    try:
+        cursor.execute("ALTER TABLE experiments ADD COLUMN name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute("ALTER TABLE experiments ADD COLUMN deleted_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute("ALTER TABLE experiments ADD COLUMN model_a_variant TEXT")
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute("ALTER TABLE experiments ADD COLUMN model_b_variant TEXT")
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute("ALTER TABLE experiments ADD COLUMN status TEXT DEFAULT 'completed'")
+    except sqlite3.OperationalError:
+        pass
+
+def ensure_target_column_exists(cursor):
+    """
+    Migration: Add target_model column to messages table for targeted researcher interjections.
+    """
+    try:
+        cursor.execute("SELECT target_model FROM messages LIMIT 1")
+    except sqlite3.OperationalError as e:
+        if "no such column" in str(e).lower():
+            cursor.execute("ALTER TABLE messages ADD COLUMN target_model TEXT")
+    
     try:
         cursor.execute("ALTER TABLE messages ADD COLUMN is_error INTEGER DEFAULT 0")
-    except:
+    except sqlite3.OperationalError:
         pass
     
     try:
         cursor.execute("ALTER TABLE messages ADD COLUMN error_type TEXT")
-    except:
+    except sqlite3.OperationalError:
         pass
-    
-    conn.commit()
-    conn.close()
+
 
 def create_experiment(model_a, model_b, prompt_a, prompt_b, max_turns, model_a_variant=None, model_b_variant=None, name=None) -> int:
     """
@@ -138,7 +157,7 @@ def create_experiment(model_a, model_b, prompt_a, prompt_b, max_turns, model_a_v
     conn.close()
     return new_id
 
-def log_message(experiment_id: int, sender: str, content: str, is_error: bool = False, error_type: str = None):
+def log_message(experiment_id: int, sender: str, content: str, is_error: bool = False, error_type: str = None, target_model: str = None):
     """
     Log a single message to the database.
     
@@ -148,6 +167,7 @@ def log_message(experiment_id: int, sender: str, content: str, is_error: bool = 
         content: The actual message text
         is_error: Whether this message represents an error
         error_type: Type of error (e.g., "rate_limit", "api_error", "network_error")
+        target_model: For researcher interjections - 'model_a', 'model_b', or 'both'
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -156,10 +176,10 @@ def log_message(experiment_id: int, sender: str, content: str, is_error: bool = 
     
     cursor.execute(
         """
-        INSERT INTO messages (experiment_id, timestamp, sender_role, content, is_error, error_type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (experiment_id, timestamp, sender_role, content, is_error, error_type, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (experiment_id, timestamp, sender, content, 1 if is_error else 0, error_type)
+        (experiment_id, timestamp, sender, content, 1 if is_error else 0, error_type, target_model)
     )
     
     conn.commit()
@@ -184,9 +204,13 @@ def update_experiment_status(experiment_id: int, status: str):
     conn.commit()
     conn.close()
 
-def get_all_experiments():
+def get_all_experiments(limit: int = None, offset: int = 0):
     """
     Retrieve all non-deleted experiments with basic metadata.
+    
+    Args:
+        limit: Maximum number of experiments to return (None = all)
+        offset: Number of experiments to skip
     
     Returns:
         List of dicts containing experiment info
@@ -194,7 +218,7 @@ def get_all_experiments():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
+    query = """
         SELECT 
             e.id,
             e.name,
@@ -206,17 +230,32 @@ def get_all_experiments():
             e.max_turns,
             e.model_a_variant,
             e.model_b_variant,
-            COUNT(m.id) as message_count
+            COUNT(CASE WHEN m.is_error = 0 THEN 1 ELSE NULL END) as message_count
         FROM experiments e
         LEFT JOIN messages m ON e.id = m.experiment_id
         WHERE e.deleted_at IS NULL
         GROUP BY e.id
         ORDER BY e.start_time DESC
-    """)
+    """
+    
+    if limit is not None:
+        query += f" LIMIT {limit} OFFSET {offset}"
+    
+    cursor.execute(query)
     
     experiments = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return experiments
+
+
+def get_experiment_count():
+    """Get total count of non-deleted experiments."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(id) as count FROM experiments WHERE deleted_at IS NULL")
+    count = cursor.fetchone()['count']
+    conn.close()
+    return count
 
 def get_experiment_messages(experiment_id: int):
     """
@@ -237,7 +276,10 @@ def get_experiment_messages(experiment_id: int):
             experiment_id,
             timestamp,
             sender_role,
-            content
+            content,
+            is_error,
+            error_type,
+            target_model
         FROM messages
         WHERE experiment_id = ?
         ORDER BY timestamp ASC

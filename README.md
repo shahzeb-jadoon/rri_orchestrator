@@ -47,6 +47,7 @@ This tool enables researchers to:
 
 - Python 3.10 or higher
 - API keys for the LLMs you want to use
+- Conda (recommended) or pip
 
 ### Installation
 
@@ -80,14 +81,19 @@ cp .env.example .env
 ### Running the Application
 
 ```bash
-# Using the new enhanced version (recommended)
 streamlit run app_new.py
-
-# Or using the original version
-streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
+
+### Testing
+
+Run the automated test suite to verify installation:
+```bash
+python tests/test_fixes.py
+```
+
+Expected output: `✅ ALL TESTS PASSED!`
 
 ## Usage Guide
 
@@ -254,13 +260,38 @@ rri_orchestrator/
 │   └── check_models.py            # Verify available models
 │
 ├── tests/                     # Test files
-│   └── test_database.py      # Database testing utility
+│   ├── test_database.py      # Database testing utility
+│   └── test_fixes.py         # Automated test suite for bug fixes
 │
 ├── data/                      # Example data
 │   └── example_prompts.txt   # Sample prompts for batch experiments
 │
 └── rri_lab.db                # SQLite database (gitignored, your data)
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+**AttributeError on session state**:
+- Ensure you're running `app_new.py` (not the old `app.py`)
+- Try restarting the Streamlit server
+- Clear browser cache and reload
+
+**Continue feature not working**:
+- Run `python tests/test_fixes.py` to verify database schema
+- Check that the database has the `target_model` column
+- Restart the app
+
+**API Errors**:
+- Verify API keys in `.env` are correct
+- Check API quota/rate limits
+- Errors are logged to terminal with specific error types
+
+**Database Issues**:
+- Database automatically migrates on startup
+- To reset: delete `rri_lab.db` (WARNING: loses all data)
+- Backup database regularly for important experiments
 
 ## Adding New LLM Providers
 
@@ -275,6 +306,14 @@ To add support for a new LLM:
 
 ## Development Roadmap
 
+### Recent Updates ✅
+- ✅ Fixed session state initialization (prevents AttributeError crashes)
+- ✅ Fixed Continue conversation feature (UI now updates in real-time)
+- ✅ Fixed history reconstruction (models maintain full context)
+- ✅ Added target tracking for researcher interjections
+- ✅ Enhanced error handling in Gemini client
+- ✅ Comprehensive automated test suite
+
 ### Stage 1 ✅ Complete
 - ✅ Basic conversation orchestration
 - ✅ Support for Google Gemini and OpenAI
@@ -288,22 +327,16 @@ To add support for a new LLM:
 - ✅ History viewer with filtering
 - ✅ CSV export functionality
 - ✅ Keyword search in conversations
-- ✅ Progress indicators
-
-### Stage 3 (Next)
-- [ ] Add Anthropic Claude support
-- [ ] Add Meta Llama support
-- [ ] Docker containerization
-- [ ] Deployment to server
-- [ ] Deployment on lab server
-- [ ] Export to CSV functionality
-- [ ] Conversation analysis tools
+- ✅ Researcher interjections and manual overrides
+- ✅ Pause and resume controls
 
 ### Stage 3 (Future)
+- [ ] Add Anthropic Claude support
+- [ ] Add Meta Llama support
 - [ ] Support for self-hosted models (Ollama)
+- [ ] Docker containerization
+- [ ] Conversation analysis tools
 - [ ] Multimodal inputs (images/video)
-- [ ] Advanced conversation control
-- [ ] Multiple simultaneous participants
 
 ## License
 
