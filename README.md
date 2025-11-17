@@ -247,29 +247,6 @@ python scripts/run_batch_experiments.py my_prompts.txt \
 - `--quiet` - Suppress progress messages
 
 See `data/example_prompts.txt` for a sample prompt file.
-```
-
-**Flip Mode (A/B Testing):**
-```bash
-# Run each prompt twice: A→B then B→A
-python run_batch_experiments.py my_prompts.txt \
-  --provider-a gemini \
-  --provider-b openai \
-  --turns 3 \
-  --flip
-```
-
-**Available Options:**
-- `prompts_file` - Path to prompts file (required, positional)
-- `--provider-a`, `--provider-b` - LLM providers (`gemini` or `openai`)
-- `--model-a`, `--model-b` - Specific model variants (see model_config.py)
-- `--turns` or `--max-turns` - Maximum conversation turns (default: 5)
-- `--flip` - Run experiments twice with swapped model positions
-- `--dry-run` - Test without creating experiments
-- `--prefix` - Experiment name prefix (default: "Batch")
-- `--quiet` - Suppress progress messages
-
-See `data/example_prompts.txt` for a sample prompt file.
 
 ## Project Structure
 
@@ -370,11 +347,11 @@ To add support for a new LLM:
 - ✅ Researcher interjections and manual overrides
 - ✅ Pause and resume controls
 
-### Stage 3 (Future)
+### Stage 3 (In Progress)
+- ✅ Docker containerization
 - [ ] Add Anthropic Claude support
 - [ ] Add Meta Llama support
 - [ ] Support for self-hosted models (Ollama)
-- [ ] Docker containerization
 - [ ] Conversation analysis tools
 - [ ] Multimodal inputs (images/video)
 
