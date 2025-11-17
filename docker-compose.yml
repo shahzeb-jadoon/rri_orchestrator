@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  rri-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rri-orchestrator
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount .env file as read-only (API keys should not be baked into image)
+      - ./.env:/app/.env:ro
+      # Mount database directory for data persistence across container restarts
+      - ./database:/app/database
+    environment:
+      # Streamlit configuration
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      # Logging
+      - STREAMLIT_LOGGER_LEVEL=info
+    restart: unless-stopped
+    networks:
+      - rri-network
+
+networks:
+  rri-network:
+    driver: bridge

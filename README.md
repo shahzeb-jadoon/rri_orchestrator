@@ -80,11 +80,53 @@ cp .env.example .env
 
 ### Running the Application
 
+#### Local Development
 ```bash
 streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
+
+#### Docker Deployment
+For containerized deployment (recommended for production):
+
+**Prerequisites:**
+- Docker 20.10+ and Docker Compose 2.0+
+- API keys configured in `.env` file
+
+**Start the application:**
+```bash
+docker-compose up --build
+```
+
+This will:
+- Build a Python 3.10 container with all dependencies
+- Mount your `.env` file (API keys stay secure)
+- Mount a `database` directory for SQLite persistence
+- Expose the app on `http://localhost:8501`
+
+**Stop the application:**
+```bash
+docker-compose down
+```
+
+**View logs:**
+```bash
+docker-compose logs -f rri-orchestrator
+```
+
+**Rebuild after code changes:**
+```bash
+docker-compose up --build
+```
+
+**What Docker provides:**
+- ✅ Consistent environment across machines
+- ✅ No local Python installation needed
+- ✅ Easy team deployment
+- ✅ Data persistence with volume mounts
+- ✅ Automatic restart on failure
+- ✅ Health checks and monitoring
 
 ### Testing
 
