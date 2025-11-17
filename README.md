@@ -81,7 +81,7 @@ cp .env.example .env
 ### Running the Application
 
 ```bash
-streamlit run app_new.py
+streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
@@ -233,8 +233,7 @@ See `data/example_prompts.txt` for a sample prompt file.
 
 ```
 rri_orchestrator/
-├── app.py                     # Original Streamlit app (Stage 1)
-├── app_new.py                 # Enhanced Streamlit app (recommended)
+├── app.py                     # Main Streamlit application
 ├── requirements.txt           # Python dependencies
 ├── .env.example              # Environment variable template
 ├── .env                      # Your API keys (gitignored)
@@ -274,7 +273,6 @@ rri_orchestrator/
 ### Common Issues
 
 **AttributeError on session state**:
-- Ensure you're running `app_new.py` (not the old `app.py`)
 - Try restarting the Streamlit server
 - Clear browser cache and reload
 
@@ -300,7 +298,7 @@ To add support for a new LLM:
 1. Create a new client file in `clients/` (e.g., `claude.py`)
 2. Inherit from `BaseLLMClient` and implement `generate_response()`
 3. Add the model configuration to `config/model_config.py`
-4. Update the provider selection in `app_new.py`
+4. Update the provider selection in `app.py`
 5. Export the new client in `clients/__init__.py`
 4. Add the API key to `.env`
 
