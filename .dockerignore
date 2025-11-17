@@ -1,0 +1,40 @@
+# Git files - not needed in container
+.git
+.gitignore
+.github
+
+# Python virtual environments and caches
+venv/
+env/
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files - API keys should come from mounted .env
+.env
+
+# Test and documentation files (optional, can remove to reduce image size)
+tests/
+README.md
+.gitignore
+
+# Database files with suffix (keep *.db as-is for persistence volume)
+*.db-journal
+*.sqlite-wal
+
+# OS files
+.DS_Store
+Thumbs.db
