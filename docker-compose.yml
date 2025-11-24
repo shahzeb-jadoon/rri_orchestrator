@@ -1,32 +1,32 @@
 version: '3.8'
 
 services:
-  rri-orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rri-orchestrator
-    ports:
-      # Bind to Tailscale IP only for secure access
-      - "100.109.54.69:8501:8501"
-    volumes:
-      # Mount .env file as read-only (API keys should not be baked into image)
-      - ./.env:/app/.env:ro
-      # Mount database file directly for data persistence
-      - ./rri_lab.db:/app/rri_lab.db
-    environment:
-      # Streamlit configuration
-      - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_SERVER_ENABLE_CORS=false
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-      - STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
-      # Logging
-      - STREAMLIT_LOGGER_LEVEL=info
+  postgres:
+    image: postgres:16-alpine
+    container_name: rri_postgres
     restart: unless-stopped
-    networks:
-      - rri-network
+    environment:
+      POSTGRES_DB: rri_orchestrator
+      POSTGRES_USER: rri_user
+      POSTGRES_PASSWORD: rri_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rri_user -d rri_orchestrator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-networks:
-  rri-network:
-    driver: bridge
+  # Adminer - Web-based database management UI (access at localhost:8081)
+  adminer:
+    image: adminer:latest
+    container_name: rri_adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres

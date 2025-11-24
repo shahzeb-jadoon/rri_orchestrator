@@ -1,0 +1,58 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, phase-*, feat/* ]
+  pull_request:
+    branches: [ main, phase-* ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: rri_orchestrator_test
+          POSTGRES_USER: rri_user
+          POSTGRES_PASSWORD: rri_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      with:
+        version: "latest"
+    
+    - name: Set up Python
+      run: uv python install 3.11
+    
+    - name: Install dependencies
+      run: |
+        uv sync --all-extras
+    
+    - name: Run tests with pytest
+      env:
+        DATABASE_URL: postgresql+asyncpg://rri_user:rri_password@localhost:5432/rri_orchestrator_test
+        SECRET_KEY: test-secret-key
+        GEMINI_API_KEY: test-key
+        OPENAI_API_KEY: test-key
+      run: |
+        uv run pytest -v
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        files: ./htmlcov/coverage.xml
+        fail_ci_if_error: false

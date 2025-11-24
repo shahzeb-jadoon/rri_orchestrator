@@ -1,368 +1,427 @@
-# RRI Conversation Orchestrator
+# RRI Orchestrator
 
-A web-based platform for studying robot-robot interaction (RRI) through conversations between Large Language Models (LLMs).
+**AI-powered orchestration system for robot-robot interactions with web-based interface**
+
+## What Is This?
+
+The RRI Orchestrator is a research platform that simulates and studies robot-to-robot communication using Large Language Models. Researchers can create experiments where AI-powered robot personas interact with each other, while the system tracks conversations, manages context windows, and provides detailed analytics. Perfect for studying emergent behaviors in multi-agent AI systems.
+
+---
 
 ## Overview
 
-This tool enables researchers to:
-- Configure multi-agent conversations between different LLMs
-- Run conversations automatically or manually control each turn
-- View and filter past experiments with a comprehensive history viewer
-- Define custom system prompts for each participant
-- Monitor conversations in real-time
-- Log all interactions to a database for analysis
-- Export conversation data to CSV for external analysis
+The RRI Orchestrator is designed for research teams to:
 
-## Features
+- Create and manage robot interaction experiments
+- Simulate robot conversations using various AI providers (Gemini, OpenAI, local LLMs)
+- Track and analyze conversation histories
+- Manage context windows efficiently to optimize AI costs
+- Access experiments from multiple devices through a secure web interface
 
-### Core Functionality
-- **Multi-Model Support**: Currently supports Google Gemini and OpenAI GPT models
-- **Conversation Modes**:
-  - **Manual Mode**: Step through conversations turn-by-turn with full control
-  - **Automatic Mode**: Run entire conversations hands-free until completion
-- **Turn Limits**: Set maximum turns to control API costs
-- **Real-time Monitoring**: Watch conversations unfold in a chat interface
-- **Stop Controls**: Pause automatic conversations at any time
+### Architecture
 
-### Data Management
-- **History Viewer**: Browse all past experiments with detailed metadata
-- **Advanced Filtering**: 
-  - Filter by model combinations
-  - Search by keywords in conversation content
-- **CSV Export**: 
-  - Export individual experiments
-  - Export all experiments
-  - Export filtered results
-  - Timestamped filenames for easy organization
-- **Data Persistence**: All conversations logged to SQLite database
-
-### Technical
-- **Modular Architecture**: Easy to add new LLM providers
-- **Password Protection**: Simple authentication to protect API keys
-- **Database Logging**: Complete conversation history with timestamps
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10 or higher
-- API keys for the LLMs you want to use
-- Conda (recommended) or pip
-
-### Installation
-
-1. Clone this repository:
-```bash
-git clone <your-repo-url>
-cd rri_orchestrator
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Client Devices                         │
+│  (Alienware, MacBooks, etc. - Access via Web Browser)       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         │ HTTPS (Cloudflare Tunnel)
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                   Dell Server (Ubuntu)                       │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  NiceGUI Web App (Port 8080)                        │   │
+│  │  - FastAPI Backend                                   │   │
+│  │  - Chat Interface                                    │   │
+│  │  - Experiment Management                             │   │
+│  └──────────────┬──────────────────┬───────────────────┘   │
+│                 │                  │                         │
+│  ┌──────────────▼─────────┐  ┌────▼──────────────────┐     │
+│  │  PostgreSQL Database    │  │  LiteLLM Adapter      │     │
+│  │  - Experiments          │  │  - Gemini/OpenAI      │     │
+│  │  - Messages             │  │  - Ollama (future)    │     │
+│  │  - Users                │  │                        │     │
+│  └─────────────────────────┘  └────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-2. Create a conda environment:
-```bash
-conda create -n rri_env python=3.10
-conda activate rri_env
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Set up your environment variables:
-```bash
-cp .env.example .env
-```
-
-5. Edit `.env` and add your API keys:
-   - Get Google API key from: https://makersuite.google.com/app/apikey
-   - Get OpenAI API key from: https://platform.openai.com/api-keys
-   - Set a secure LAB_PASSWORD
-
-### Running the Application
-
-#### Local Development
-```bash
-streamlit run app.py
-```
-
-The app will open in your browser at `http://localhost:8501`
-
-#### Docker Deployment
-For containerized deployment (recommended for production):
-
-**Prerequisites:**
-- Docker 20.10+ and Docker Compose 2.0+
-- API keys configured in `.env` file
-
-**Start the application:**
-```bash
-docker-compose up --build
-```
-
-This will:
-- Build a Python 3.10 container with all dependencies
-- Mount your `.env` file (API keys stay secure)
-- Mount a `database` directory for SQLite persistence
-- Expose the app on `http://localhost:8501`
-
-**Stop the application:**
-```bash
-docker-compose down
-```
-
-**View logs:**
-```bash
-docker-compose logs -f rri-orchestrator
-```
-
-**Rebuild after code changes:**
-```bash
-docker-compose up --build
-```
-
-**What Docker provides:**
-- ✅ Consistent environment across machines
-- ✅ No local Python installation needed
-- ✅ Easy team deployment
-- ✅ Data persistence with volume mounts
-- ✅ Automatic restart on failure
-- ✅ Health checks and monitoring
-
-### Testing
-
-Run the automated test suite to verify installation:
-```bash
-python tests/test_fixes.py
-```
-
-Expected output: `✅ ALL TESTS PASSED!`
-
-## Usage Guide
-
-### Starting a New Conversation
-
-**Method 1: Automatic Mode (Recommended for long conversations)**
-1. Select "💬 New Conversation" from sidebar
-2. Choose "Automatic" conversation mode
-3. Select Model A and Model B
-4. Set max turns (e.g., 10)
-5. Enter system prompts for both models
-6. Click "🚀 Start New Experiment"
-7. Type your initial prompt
-8. Watch the conversation unfold automatically!
-9. Use "⏹️ Stop" button to pause if needed
-
-**Method 2: Manual Mode (For step-by-step control)**
-1. Select "Manual" conversation mode
-2. Configure models and prompts as above
-3. After each exchange, click "Continue Conversation"
-4. Manually control the pace of the conversation
-
-### Viewing Past Conversations
-
-1. Click "📚 View History" in sidebar navigation
-2. Browse all your experiments
-3. Use filters to find specific conversations:
-   - **Model Pair Filter**: Select specific model combinations
-   - **Keyword Search**: Find conversations containing specific terms
-4. Click on any experiment to expand and view full details
-5. Read complete conversation transcripts with timestamps
-
-### Exporting Data
-
-**Export All Data:**
-1. Go to "📚 View History"
-2. Click "📊 Export All Experiments to CSV"
-3. Download button will appear
-4. CSV file includes all experiments with full metadata
-
-**Export Filtered Data:**
-1. Apply filters (model pair, keywords)
-2. Click "📊 Export Filtered Results to CSV"
-3. Download only the experiments that match your filters
-
-**Export Single Experiment:**
-1. Expand an experiment in the history view
-2. Click "📥 Export Experiment #X"
-3. Download CSV for just that conversation
-
-**CSV Format:**
-- `experiment_id`: Unique identifier
-- `experiment_start_time`: When experiment began
-- `model_a_name`, `model_b_name`: Models used
-- `turn_number`: Which turn (0 for initial, 1, 2, 3...)
-- `speaker`: Who sent the message
-- `timestamp`: Exact time message was sent
-- `message_content`: Full message text
-- `model_a_system_prompt`, `model_b_system_prompt`: System prompts used
-- `max_turns`: Maximum turns configured
-
-### Running Batch Experiments (CLI)
-
-For systematic research with multiple prompts, use the batch experiment runner:
-
-**Basic Usage:**
-```bash
-# Create a prompts file (one prompt per line)
-cat > my_prompts.txt << 'EOF'
-Discuss the ethical implications of AI in healthcare.
-What are the trade-offs between privacy and convenience?
-Should social media platforms be regulated?
-EOF
-
-# Run dry test first
-python scripts/run_batch_experiments.py my_prompts.txt \
-  --provider-a gemini \
-  --provider-b openai \
-  --model-a "gemini-2.5-pro" \
-  --model-b "gpt-4o" \
-  --turns 3 \
-  --dry-run
-
-# Run actual experiments
-python scripts/run_batch_experiments.py my_prompts.txt \
-  --provider-a gemini \
-  --provider-b openai \
-  --turns 3
-```
-
-**Flip Mode (A/B Testing):**
-```bash
-# Run each prompt twice: A→B then B→A
-python scripts/run_batch_experiments.py my_prompts.txt \
-  --provider-a gemini \
-  --provider-b openai \
-  --turns 3 \
-  --flip
-```
-
-**Available Options:**
-- `prompts_file` - Path to prompts file (required, positional)
-- `--provider-a`, `--provider-b` - LLM providers (`gemini` or `openai`)
-- `--model-a`, `--model-b` - Specific model variants (see config/model_config.py)
-- `--turns` or `--max-turns` - Maximum conversation turns (default: 5)
-- `--flip` - Run experiments twice with swapped model positions
-- `--dry-run` - Test without creating experiments
-- `--prefix` - Experiment name prefix (default: "Batch")
-- `--quiet` - Suppress progress messages
-
-See `data/example_prompts.txt` for a sample prompt file.
+---
 
 ## Project Structure
 
 ```
-rri_orchestrator/
-├── app.py                     # Main Streamlit application
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment variable template
-├── .env                      # Your API keys (gitignored)
-├── .gitignore                # Git ignore patterns
-├── README.md                 # Complete documentation (this file)
-│
-├── clients/                   # LLM client implementations
-│   ├── __init__.py           # Package exports
-│   ├── base.py               # Abstract base class
-│   ├── gemini.py             # Google Gemini client
-│   └── openai.py             # OpenAI client
-│
-├── config/                    # Configuration files
+rri-orchestrator/
+├── .github/
+│   └── workflows/
+│       └── test.yml           # CI/CD pipeline
+├── data/
+│   └── postgres_data/         # Database persistence (Docker volume)
+├── scripts/
+│   ├── init_db.py             # Initialize database tables
+│   └── create_user.py         # Create admin user
+├── src/
 │   ├── __init__.py
-│   └── model_config.py       # Model definitions (15 variants)
-│
-├── core/                      # Core business logic
-│   ├── __init__.py
-│   └── database.py           # SQLite operations with migrations
-│
-├── scripts/                   # CLI utilities
-│   ├── run_batch_experiments.py   # Batch experiment automation
-│   └── check_models.py            # Verify available models
-│
-├── tests/                     # Test files
-│   ├── test_database.py      # Database testing utility
-│   └── test_fixes.py         # Automated test suite for bug fixes
-│
-├── data/                      # Example data
-│   └── example_prompts.txt   # Sample prompts for batch experiments
-│
-└── rri_lab.db                # SQLite database (gitignored, your data)
+│   ├── main.py                # Application entry point
+│   ├── config.py              # Configuration management
+│   ├── ai/                    # AI integration (Phase 2)
+│   ├── database/
+│   │   ├── models.py          # Database schema
+│   │   └── session.py         # Connection management
+│   ├── ui/                    # User interface (Phase 1)
+│   └── utils/
+│       └── logger.py          # Logging setup
+├── tests/
+│   ├── conftest.py            # Test configuration
+│   ├── test_db.py             # Database tests
+│   ├── test_ai.py             # AI integration tests
+│   └── test_ui.py             # UI tests
+├── .env                       # Environment variables (DO NOT COMMIT)
+├── .env.example               # Template for .env
+├── .gitignore
+├── docker-compose.yml         # PostgreSQL + Adminer
+├── pyproject.toml             # Project dependencies
+└── README.md
 ```
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+
+- **Python 3.11+**
+- **Docker** (for PostgreSQL)
+- **uv** (Python package manager)
+
+### 1. Install uv
+
+On Ubuntu/WSL:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+After installation, restart your terminal or run:
+
+```bash
+source $HOME/.cargo/env
+```
+
+### 2. Clone and Navigate to Project
+
+```bash
+cd ~/projects/rri_orchestrator
+```
+
+### 3. Install Dependencies
+
+```bash
+uv sync
+```
+
+This creates a virtual environment and installs all required packages.
+
+### 4. Configure Environment Variables
+
+Create a `.env` file from the template:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your actual values:
+
+```bash
+nano .env
+```
+
+**Required values:**
+
+- `GEMINI_API_KEY`: Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- `OPENAI_API_KEY`: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
+- `SECRET_KEY`: Generate with `openssl rand -hex 32`
+
+### 5. Start PostgreSQL Database
+
+```bash
+docker-compose up -d
+```
+
+This starts:
+- PostgreSQL on port `5432`
+- Adminer (database UI) on port `8081`
+
+Verify it's running:
+
+```bash
+docker ps
+```
+
+### 6. Initialize Database
+
+```bash
+uv run python scripts/init_db.py
+```
+
+This creates all necessary tables in PostgreSQL.
+
+### 7. Create Admin User
+
+```bash
+uv run python scripts/create_user.py
+```
+
+Follow the prompts to create your first user account.
+
+---
+
+## Running the Application
+
+### Start the Server
+
+**On the Dell server:**
+
+```bash
+uv run python src/main.py
+```
+
+The application will be available at `http://localhost:8080`
+
+### Access from Other Devices (via Cloudflare Tunnel)
+
+1. Install Cloudflare Tunnel:
+
+```bash
+wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared-linux-amd64.deb
+```
+
+2. Create a tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+```
+
+3. Access the provided URL from any device on the internet
+
+---
+
+## Development Workflow
+
+### Git Branching Strategy
+
+```
+main (production-ready code)
+├── phase-1-foundation (integration branch)
+│   ├── feat/ui-skeleton
+│   ├── feat/chat-component
+│   └── feat/cloudflare-deploy
+├── phase-2-ai-integration (integration branch)
+│   ├── feat/litellm-setup
+│   ├── feat/ai-service
+│   └── feat/memory-management
+└── phase-3-advanced-features
+```
+
+**Workflow:**
+
+1. Create a feature branch from a phase branch
+2. Implement and test your changes
+3. Commit with descriptive messages (e.g., `feat: add chat interface component`)
+4. Merge feature back into phase branch
+5. When phase is complete, merge into `main`
+
+### Running Tests
+
+Run all tests:
+
+```bash
+uv run pytest
+```
+
+Run specific test file:
+
+```bash
+uv run pytest tests/test_db.py
+```
+
+Run with coverage report:
+
+```bash
+uv run pytest --cov=src --cov-report=html
+```
+
+View coverage report:
+
+```bash
+open htmlcov/index.html
+```
+
+### Database Management
+
+**Access Adminer (Database UI):**
+
+Open `http://localhost:8081` in your browser
+
+- **System:** PostgreSQL
+- **Server:** postgres
+- **Username:** rri_user
+- **Password:** rri_password
+- **Database:** rri_orchestrator
+
+**Create database backup:**
+
+```bash
+docker exec rri_postgres pg_dump -U rri_user rri_orchestrator > backup.sql
+```
+
+**Restore from backup:**
+
+```bash
+cat backup.sql | docker exec -i rri_postgres psql -U rri_user -d rri_orchestrator
+```
+
+---
+
+## Database Schema
+
+### Core Tables
+
+**users**
+- Authentication and user profiles
+- Tracks admin privileges
+
+**experiments**
+- Research sessions with specific parameters
+- Links to users and contains multiple messages
+
+**chat_messages**
+- Individual conversation messages
+- Stores role (user/assistant/system), content, and metadata
+
+**conversation_summaries**
+- Summarized history for context window management
+- Links to message ranges
+
+**robot_profiles**
+- Reusable robot personality definitions
+- System prompts and behavioral parameters
+
+---
+
+## Configuration
+
+All settings are managed through environment variables (`.env` file) or can be overridden at runtime.
+
+### Key Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL connection string |
+| `GEMINI_API_KEY` | - | Google Gemini API key |
+| `OPENAI_API_KEY` | - | OpenAI API key |
+| `DEFAULT_AI_PROVIDER` | `gemini` | Which AI provider to use |
+| `MAX_CONVERSATION_HISTORY` | `50` | Messages to keep in context |
+| `ENABLE_AUTO_SUMMARY` | `true` | Auto-summarize old conversations |
+| `HOST` | `0.0.0.0` | Server bind address |
+| `PORT` | `8080` | Server port |
+
+---
+
+## Phase Roadmap
+
+### ✅ Phase 1: Foundation (Current)
+
+- [x] Project structure and configuration
+- [x] Database setup with PostgreSQL
+- [x] Basic web interface skeleton
+- [x] User authentication
+- [x] Testing infrastructure
+- [x] CI/CD pipeline
+
+### 🔄 Phase 2: AI Integration (Next)
+
+- [ ] LiteLLM service implementation
+- [ ] Chat interface with streaming responses
+- [ ] Context window management
+- [ ] AI cost tracking
+- [ ] Multi-provider fallback
+
+### 📋 Phase 3: Advanced Features
+
+- [ ] Robot profile management
+- [ ] Experiment analytics
+- [ ] Real-time collaboration
+- [ ] Export/import functionality
+- [ ] Local LLM support (Ollama)
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Database Connection Failed
 
-**AttributeError on session state**:
-- Try restarting the Streamlit server
-- Clear browser cache and reload
+Check if PostgreSQL is running:
 
-**Continue feature not working**:
-- Run `python tests/test_fixes.py` to verify database schema
-- Check that the database has the `target_model` column
-- Restart the app
+```bash
+docker ps | grep postgres
+```
 
-**API Errors**:
-- Verify API keys in `.env` are correct
-- Check API quota/rate limits
-- Errors are logged to terminal with specific error types
+Restart if needed:
 
-**Database Issues**:
-- Database automatically migrates on startup
-- To reset: delete `rri_lab.db` (WARNING: loses all data)
-- Backup database regularly for important experiments
+```bash
+docker-compose restart postgres
+```
 
-## Adding New LLM Providers
+### Port Already in Use
 
-To add support for a new LLM:
+Find process using port 8080:
 
-1. Create a new client file in `clients/` (e.g., `claude.py`)
-2. Inherit from `BaseLLMClient` and implement `generate_response()`
-3. Add the model configuration to `config/model_config.py`
-4. Update the provider selection in `app.py`
-5. Export the new client in `clients/__init__.py`
-4. Add the API key to `.env`
+```bash
+lsof -i :8080
+```
 
-## Development Roadmap
+Kill the process:
 
-### Recent Updates ✅
-- ✅ Fixed session state initialization (prevents AttributeError crashes)
-- ✅ Fixed Continue conversation feature (UI now updates in real-time)
-- ✅ Fixed history reconstruction (models maintain full context)
-- ✅ Added target tracking for researcher interjections
-- ✅ Enhanced error handling in Gemini client
-- ✅ Comprehensive automated test suite
+```bash
+kill -9 <PID>
+```
 
-### Stage 1 ✅ Complete
-- ✅ Basic conversation orchestration
-- ✅ Support for Google Gemini and OpenAI
-- ✅ SQLite logging
-- ✅ Simple authentication
-- ✅ Turn limits for cost control
+### Import Errors
 
-### Stage 2 ✅ Complete
-- ✅ Automatic conversation mode
-- ✅ Manual conversation mode
-- ✅ History viewer with filtering
-- ✅ CSV export functionality
-- ✅ Keyword search in conversations
-- ✅ Researcher interjections and manual overrides
-- ✅ Pause and resume controls
+Ensure you're using the virtual environment:
 
-### Stage 3 (In Progress)
-- ✅ Docker containerization
-- [ ] Add Anthropic Claude support
-- [ ] Add Meta Llama support
-- [ ] Support for self-hosted models (Ollama)
-- [ ] Conversation analysis tools
-- [ ] Multimodal inputs (images/video)
+```bash
+uv sync
+uv run python src/main.py
+```
+
+---
+
+## Contributing
+
+1. Create a feature branch: `git checkout -b feat/your-feature`
+2. Write tests for your changes
+3. Ensure all tests pass: `uv run pytest`
+4. Commit with clear messages: `feat: add description`
+5. Push and create a pull request
+
+---
 
 ## License
 
-This project is for academic research use.
+This project is for research purposes. See your institution's policies regarding code ownership and distribution.
 
-## Contributors
+---
 
-- RIT RRI Research Team
+## Support
 
-## Acknowledgments
+For issues or questions:
+- Check the [Troubleshooting](#troubleshooting) section
+- Review test files for usage examples
+- Check logs in the console output
 
-Built following architectural guidance from the research team and incorporating best practices for modular LLM integration.
+---
+
+**Built with:** NiceGUI, FastAPI, PostgreSQL, Tortoise ORM, LiteLLM

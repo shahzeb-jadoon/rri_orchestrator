@@ -1,51 +1,62 @@
-# Environment files - never commit API keys!
+# Environment variables (contains secrets)
 .env
 
-# Database files - these contain research data
-*.db
-*.sqlite
-*.sqlite3
-
-# Batch experiment outputs
-batch_results_summary.json
-*_results_summary.json
-
-# Test/temporary prompt files
-test_prompts.txt
-temp_*.txt
-
-# Python cache files
+# Python cache and build artifacts
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Database files - these contain research data
-*.db
-*.sqlite
-*.sqlite3
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
 
-# IDE and editor files
+# IDE specific files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS files
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+data/postgres_data/*
+!data/postgres_data/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS specific
 .DS_Store
 Thumbs.db
 
-# Conda environment
-env/
-venv/
-ENV/
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
+# uv specific
+.uv/
+uv.lock
