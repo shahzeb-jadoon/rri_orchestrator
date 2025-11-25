@@ -12,7 +12,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./data/postgres_data:/var/lib/postgresql/data
+      # Use named volume instead of local directory to avoid permission issues
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rri_user -d rri_orchestrator"]
       interval: 10s
@@ -30,3 +31,6 @@ services:
       - postgres
     environment:
       ADMINER_DEFAULT_SERVER: postgres
+
+volumes:
+  postgres_data:

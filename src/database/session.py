@@ -15,11 +15,12 @@ from src.config import settings
 # Database configuration for Tortoise ORM
 TORTOISE_ORM = {
     "connections": {
-        "default": settings.database_url,
+        # Tortoise ORM uses postgres:// scheme, not postgresql+asyncpg://
+        "default": settings.database_url.replace("postgresql+asyncpg://", "postgres://"),
     },
     "apps": {
         "models": {
-            "models": ["src.database.models", "aerich.models"],
+            "models": ["src.database.models"],
             "default_connection": "default",
         },
     },

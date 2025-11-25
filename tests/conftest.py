@@ -33,8 +33,10 @@ async def init_test_db():
     
     This creates a fresh database for each test to ensure isolation.
     """
-    # Use test database
+    # Use test database with postgres:// scheme for Tortoise ORM
     test_db_url = settings.database_url.replace(
+        "postgresql+asyncpg://", "postgres://"
+    ).replace(
         "rri_orchestrator", 
         "rri_orchestrator_test"
     )
@@ -47,5 +49,7 @@ async def init_test_db():
     
     yield
     
-    # Clean up after test
+    # Clean up after test - drop all tables to get fresh state for next test
+    conn = Tortoise.get_connection("default")
+    await conn.execute_script("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
     await Tortoise.close_connections()

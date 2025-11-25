@@ -19,9 +19,9 @@ class User(Model):
     Stores authentication information and user preferences.
     """
     
-    id = fields.IntField(pk=True)
-    username = fields.CharField(max_length=50, unique=True, index=True)
-    email = fields.CharField(max_length=255, unique=True, index=True)
+    id = fields.IntField(primary_key=True)
+    username = fields.CharField(max_length=50, unique=True, db_index=True)
+    email = fields.CharField(max_length=255, unique=True, db_index=True)
     hashed_password = fields.CharField(max_length=255)
     full_name = fields.CharField(max_length=100, null=True)
     is_active = fields.BooleanField(default=True)
@@ -47,7 +47,7 @@ class Experiment(Model):
     and can contain multiple conversation threads.
     """
     
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=200)
     description = fields.TextField(null=True)
     created_by = fields.ForeignKeyField(
@@ -86,7 +86,7 @@ class ChatMessage(Model):
     user inputs and AI-generated responses.
     """
     
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     experiment = fields.ForeignKeyField(
         "models.Experiment",
         related_name="messages",
@@ -119,7 +119,7 @@ class ConversationSummary(Model):
     token usage.
     """
     
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     experiment = fields.ForeignKeyField(
         "models.Experiment",
         related_name="summaries",
@@ -147,7 +147,7 @@ class RobotProfile(Model):
     and behavioral parameters.
     """
     
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
     description = fields.TextField()
     system_prompt = fields.TextField()
