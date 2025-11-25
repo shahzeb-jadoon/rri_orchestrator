@@ -40,8 +40,7 @@ env/
 *.sqlite
 *.sqlite3
 *.db
-data/postgres_data/*
-!data/postgres_data/.gitkeep
+data/
 
 # Logs
 *.log

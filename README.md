@@ -55,8 +55,6 @@ rri-orchestrator/
 ├── .github/
 │   └── workflows/
 │       └── test.yml           # CI/CD pipeline
-├── data/
-│   └── postgres_data/         # Database persistence (Docker volume)
 ├── scripts/
 │   ├── init_db.py             # Initialize database tables
 │   └── create_user.py         # Create admin user
