@@ -60,11 +60,27 @@ class Experiment(Model):
     is_active = fields.BooleanField(default=True)
     
     # Experiment parameters
-    robot_a_persona = fields.CharField(max_length=100, null=True)
-    robot_b_persona = fields.CharField(max_length=100, null=True)
-    ai_provider = fields.CharField(max_length=50, default="gemini")
+    robot_a_persona = fields.CharField(max_length=100, null=True)  # Deprecated in favor of robot_a_profile
+    robot_b_persona = fields.CharField(max_length=100, null=True)  # Deprecated in favor of robot_b_profile
+    ai_provider = fields.CharField(max_length=50, default="gemini")  # Deprecated in favor of per-robot AI config
     temperature = fields.FloatField(default=0.7)
     max_tokens = fields.IntField(default=4096)
+    
+    # Phase 2: Robot Profile References
+    robot_a_profile = fields.ForeignKeyField(
+        "models.RobotProfile",
+        related_name="experiments_as_robot_a",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Robot A configuration with dedicated AI provider"
+    )
+    robot_b_profile = fields.ForeignKeyField(
+        "models.RobotProfile",
+        related_name="experiments_as_robot_b",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Robot B configuration with dedicated AI provider"
+    )
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
@@ -164,6 +180,18 @@ class RobotProfile(Model):
     # Behavioral parameters
     default_temperature = fields.FloatField(default=0.7)
     personality_traits = fields.JSONField(default=dict)
+    
+    # AI Configuration (Phase 2: Per-Robot AI Selection)
+    ai_provider = fields.CharField(
+        max_length=50,
+        default="gemini",
+        description="AI provider: openai, gemini, anthropic, etc."
+    )
+    model_name = fields.CharField(
+        max_length=100,
+        null=True,
+        description="Specific model variant: gpt-4o, gemini-2.0-flash, etc."
+    )
     
     class Meta:
         table = "robot_profiles"
