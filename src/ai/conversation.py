@@ -109,19 +109,28 @@ async def orchestrate_conversation_turn(
         logger.error(f"Failed to generate response for {active_robot.name}: {e}")
         raise
     
-    # Save to database
+    # Determine which robot this is
+    robot_identifier = initiating_robot  # "robot_a" or "robot_b"
+    
+    # Save to database with detailed tracking
     message = await ChatMessage.create(
         experiment=experiment,
         role="assistant",
         content=response["content"],
         model_used=response["model_used"],
         token_count=response["tokens_used"],
-        response_time_ms=response["response_time_ms"]
+        input_tokens=response["input_tokens"],
+        output_tokens=response["output_tokens"],
+        cost_usd=response["cost_usd"],
+        response_time_ms=response["response_time_ms"],
+        robot_name=robot_identifier,
+        robot_provider=response["robot_provider"]
     )
     
     logger.info(
-        f"Turn complete: {message.token_count} tokens, "
-        f"{message.response_time_ms}ms"
+        f"Turn complete: {message.token_count} tokens "
+        f"(in: {message.input_tokens}, out: {message.output_tokens}), "
+        f"${message.cost_usd:.4f}, {message.response_time_ms}ms"
     )
     
     return message

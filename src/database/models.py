@@ -112,18 +112,29 @@ class ChatMessage(Model):
     content = fields.TextField()
     created_at = fields.DatetimeField(auto_now_add=True)
     
-    # Metadata
-    token_count = fields.IntField(null=True)
+    # AI metadata
     model_used = fields.CharField(max_length=100, null=True)
+    
+    # Token tracking (split for cost analysis)
+    input_tokens = fields.IntField(default=0)  # Prompt/context tokens
+    output_tokens = fields.IntField(default=0)  # Response/completion tokens
+    token_count = fields.IntField(default=0)  # Total (for backward compatibility)
+    
+    # Cost and performance
+    cost_usd = fields.DecimalField(max_digits=10, decimal_places=6, null=True)
     response_time_ms = fields.IntField(null=True)
+    
+    # Robot identification (for cost breakdown)
+    robot_name = fields.CharField(max_length=100, null=True)  # "robot_a" or "robot_b"
+    robot_provider = fields.CharField(max_length=50, null=True)  # "openai", "gemini", etc.
     
     class Meta:
         table = "chat_messages"
         ordering = ["created_at"]
     
     def __str__(self) -> str:
-        content_preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
-        return f"Message({self.role}: {content_preview})"
+        preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
+        return f"ChatMessage({self.role}: {preview})"
 
 
 class ConversationSummary(Model):

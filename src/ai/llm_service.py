@@ -68,10 +68,11 @@ async def generate_robot_response(
             - content: The AI's response text
             - model_used: Model that generated the response
             - tokens_used: Total tokens consumed
-            - input_tokens: Input token count
-            - output_tokens: Output token count
+            - input_tokens: Input token count (prompt/context)
+            - output_tokens: Output token count (completion)
             - cost_usd: Estimated cost in USD
             - response_time_ms: Time taken to generate response
+            - robot_provider: Provider used (for cost breakdown)
             
     Raises:
         ValueError: If robot profile is invalid
@@ -125,7 +126,8 @@ async def generate_robot_response(
     output_tokens = response.usage.completion_tokens
     total_tokens = response.usage.total_tokens
     
-    # Calculate cost
+    # Calculate cost using our fallback method
+    # TODO: Switch to litellm.completion_cost() for automatic pricing updates
     cost = calculate_cost(
         robot_profile.ai_provider,
         robot_profile.model_name,
@@ -134,7 +136,8 @@ async def generate_robot_response(
     )
     
     logger.info(
-        f"Response generated: {total_tokens} tokens, "
+        f"Response generated: {total_tokens} tokens "
+        f"(in: {input_tokens}, out: {output_tokens}), "
         f"${cost:.4f}, {elapsed_ms}ms"
     )
     
@@ -145,7 +148,8 @@ async def generate_robot_response(
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cost_usd": cost,
-        "response_time_ms": elapsed_ms
+        "response_time_ms": elapsed_ms,
+        "robot_provider": robot_profile.ai_provider
     }
 
 
