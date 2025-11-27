@@ -210,6 +210,119 @@ async def create_experiment_page():
             ui.button('Create & Start', on_click=create_experiment).props('color=primary')
 
 
+
+
+async def export_to_csv(experiment_id: int):
+    """Export experiment conversation to CSV format."""
+    import csv
+    from io import StringIO
+    
+    experiment = await Experiment.get(id=experiment_id)
+    await experiment.fetch_related('robot_a_profile', 'robot_b_profile')
+    messages = await ChatMessage.filter(experiment=experiment).order_by('created_at')
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Header row
+    writer.writerow([
+        'timestamp', 'robot_name', 'robot_display_name', 'robot_provider',
+        'model', 'message', 'tokens_total', 'tokens_in', 'tokens_out',
+        'cost_usd', 'response_time_ms'
+    ])
+    
+    # Data rows
+    for msg in messages:
+        robot_name = (experiment.robot_a_profile.name if msg.robot_name == 'robot_a'
+                     else experiment.robot_b_profile.name)
+        writer.writerow([
+            msg.created_at.isoformat(),
+            msg.robot_name,
+            robot_name,
+            msg.robot_provider,
+            msg.model_used,
+            msg.content,
+            msg.token_count,
+            msg.input_tokens,
+            msg.output_tokens,
+            msg.cost_usd,
+            msg.response_time_ms
+        ])
+    
+    # Download
+    filename = f"{experiment.name.replace(' ', '_')}_{experiment.id}.csv"
+    ui.download(output.getvalue().encode(), filename)
+    ui.notify(f'Exported to {filename}', type='positive')
+
+
+async def export_to_json(experiment_id: int):
+    """Export experiment conversation to JSON format."""
+    import json
+    
+    experiment = await Experiment.get(id=experiment_id)
+    await experiment.fetch_related('robot_a_profile', 'robot_b_profile', 'created_by')
+    messages = await ChatMessage.filter(experiment=experiment).order_by('created_at')
+    
+    data = {
+        "experiment": {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "initial_prompt": experiment.initial_prompt,
+            "max_turns": experiment.max_turns,
+            "created_at": experiment.created_at.isoformat(),
+            "created_by": experiment.created_by.username
+        },
+        "robots": {
+            "robot_a": {
+                "name": experiment.robot_a_profile.name,
+                "provider": experiment.robot_a_profile.ai_provider,
+                "model": experiment.robot_a_profile.model_name,
+                "temperature": experiment.robot_a_profile.default_temperature,
+                "system_prompt": experiment.robot_a_profile.system_prompt
+            },
+            "robot_b": {
+                "name": experiment.robot_b_profile.name,
+                "provider": experiment.robot_b_profile.ai_provider,
+                "model": experiment.robot_b_profile.model_name,
+                "temperature": experiment.robot_b_profile.default_temperature,
+                "system_prompt": experiment.robot_b_profile.system_prompt
+            }
+        },
+        "messages": [
+            {
+                "timestamp": msg.created_at.isoformat(),
+                "robot": msg.robot_name,
+                "robot_display_name": (experiment.robot_a_profile.name if msg.robot_name == 'robot_a'
+                                      else experiment.robot_b_profile.name),
+                "provider": msg.robot_provider,
+                "model": msg.model_used,
+                "content": msg.content,
+                "tokens": {
+                    "total": msg.token_count,
+                    "input": msg.input_tokens,
+                    "output": msg.output_tokens
+                },
+                "cost_usd": msg.cost_usd,
+                "response_time_ms": msg.response_time_ms
+            }
+            for msg in messages
+        ],
+        "summary": {
+            "total_messages": len(messages),
+            "robot_a_messages": sum(1 for m in messages if m.robot_name == 'robot_a'),
+            "robot_b_messages": sum(1 for m in messages if m.robot_name == 'robot_b'),
+            "total_tokens": sum(m.token_count or 0 for m in messages),
+            "total_cost_usd": sum(m.cost_usd or 0 for m in messages),
+            "duration_seconds": (messages[-1].created_at - messages[0].created_at).total_seconds() if messages else 0
+        }
+    }
+    
+    filename = f"{experiment.name.replace(' ', '_')}_{experiment.id}.json"
+    ui.download(json.dumps(data, indent=2).encode(), filename)
+    ui.notify(f'Exported to {filename}', type='positive')
+
+
 @ui.page('/experiments/{experiment_id}')
 async def chat_page(experiment_id: int):
     """
@@ -227,8 +340,13 @@ async def chat_page(experiment_id: int):
     
     await experiment.fetch_related('robot_a_profile', 'robot_b_profile')
     
-    # Header
-    ui.label(f'Experiment: {experiment.name}').classes('text-h4')
+    # Header with export buttons
+    with ui.row().classes('w-full items-center justify-between'):
+        ui.label(f'Experiment: {experiment.name}').classes('text-h4')
+        with ui.row().classes('gap-2'):
+            ui.button('📥 Export CSV', on_click=lambda: export_to_csv(experiment.id)).props('flat')
+            ui.button('📥 Export JSON', on_click=lambda: export_to_json(experiment.id)).props('flat')
+    
     ui.label(
         f'{experiment.robot_a_profile.name} ({experiment.robot_a_profile.model_name}) '
         f'vs '
@@ -525,11 +643,43 @@ async def chat_page(experiment_id: int):
                 breakdown[provider]['cost'] += msg.cost_usd or 0
                 breakdown[provider]['tokens'] += msg.token_count or 0
             
-            summary = f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}'
-            if breakdown:
-                summary += ' | Breakdown: '
-                parts = [f'{p}: ${d["cost"]:.4f}' for p, d in breakdown.items()]
-                summary += ', '.join(parts)
+            # Per-robot detailed breakdown
+            robot_stats = {}
+            for msg in messages:
+                robot_key = msg.robot_name
+                if robot_key not in robot_stats:
+                    robot_profile = (experiment.robot_a_profile if msg.robot_name == 'robot_a' 
+                                    else experiment.robot_b_profile)
+                    robot_stats[robot_key] = {
+                        'name': robot_profile.name,
+                        'provider': msg.robot_provider,
+                        'model': msg.model_used,
+                        'tokens': 0,
+                        'input_tokens': 0,
+                        'output_tokens': 0,
+                        'cost': 0,
+                        'count': 0
+                    }
+                
+                robot_stats[robot_key]['tokens'] += msg.token_count or 0
+                robot_stats[robot_key]['input_tokens'] += msg.input_tokens or 0
+                robot_stats[robot_key]['output_tokens'] += msg.output_tokens or 0
+                robot_stats[robot_key]['cost'] += msg.cost_usd or 0
+                robot_stats[robot_key]['count'] += 1
+            
+            # Build summary with per-robot stats
+            summary = f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}\n\n'
+            
+            if robot_stats:
+                summary += 'Per-Robot Breakdown:\n'
+                for robot_key, stats in robot_stats.items():
+                    avg_tokens = stats['tokens'] / stats['count'] if stats['count'] > 0 else 0
+                    summary += f"  • {stats['name']} ({stats['provider']}/{stats['model']}):\n"
+                    summary += f"      Tokens: {stats['tokens']:,} (in: {stats['input_tokens']:,}, out: {stats['output_tokens']:,})\n"
+                    summary += f"      Cost: ${stats['cost']:.4f}"
+                    if stats['cost'] == 0:
+                        summary += " (free tier)"
+                    summary += f"\n      {stats['count']} messages, avg {avg_tokens:.0f} tokens/msg\n"
             
             cost_summary.text = summary
         
