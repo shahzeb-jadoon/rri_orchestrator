@@ -1,18 +1,77 @@
 """
-LiteLLM Service Wrapper.
+LLM Service for AI Model Integration
 
-This module provides a universal interface for calling different AI providers
-through LiteLLM, with support for OpenAI, Google Gemini, Anthropic, and more.
+This module uses LiteLLM to interact with AI providers (OpenAI, Gemini, etc.).
+LiteLLM provides a unified interface, allowing easy switching between providers
+including local models via Ollama in the future.
 """
 
+import asyncio
 import time
 from typing import Dict, List, Optional
 
-from litellm import acompletion
+from litellm import acompletion, RateLimitError, APIError, Timeout
 from src.config import settings
 from src.database.models import RobotProfile
 from src.ai.model_config import calculate_cost
 from src.utils.logger import logger
+
+
+# Retry configuration
+MAX_RETRIES = 3
+BASE_DELAY = 1  # seconds
+
+
+async def retry_with_backoff(func, *args, max_retries=MAX_RETRIES, **kwargs):
+    """
+    Retry a function with exponential backoff.
+    
+    Args:
+        func: Async function to retry
+        max_retries: Maximum number of retry attempts
+        *args, **kwargs: Arguments to pass to func
+        
+    Returns:
+        Result from func
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return await func(*args, **kwargs)
+            
+        except RateLimitError as e:
+            last_exception = e
+            if attempt == max_retries - 1:
+                logger.error(f"Rate limit after {max_retries} attempts: {e}")
+                raise
+            
+            # Exponential backoff: 1s, 2s, 4s
+            wait_time = BASE_DELAY * (2 ** attempt)
+            logger.warning(f"Rate limit hit, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+            await asyncio.sleep(wait_time)
+            
+        except (APIError, Timeout) as e:
+            last_exception = e
+            if attempt == max_retries - 1:
+                logger.error(f"API error after {max_retries} attempts: {e}")
+                raise
+            
+            # Quick retry for network/API errors
+            wait_time = 1
+            logger.warning(f"API error, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries}): {e}")
+            await asyncio.sleep(wait_time)
+            
+        except Exception as e:
+            # Don't retry on other exceptions (validation errors, etc.)
+            logger.error(f"Non-retryable error: {e}")
+            raise
+    
+    # Should never reach here, but just in case
+    raise last_exception
 
 
 def get_api_key_for_provider(provider: str) -> str:
@@ -114,8 +173,12 @@ async def generate_robot_response(
             max_tokens=max_tokens or settings.max_tokens,
             api_key=api_key
         )
+    
+    start_time = time.time()
+    try:
+        response = await retry_with_backoff(make_llm_call)
     except Exception as e:
-        logger.error(f"AI API call failed for {model}: {e}")
+        logger.error(f"LLM call failed after retries for {model}: {e}")
         raise
     
     elapsed_ms = int((time.time() - start_time) * 1000)
