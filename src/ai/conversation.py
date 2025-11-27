@@ -8,6 +8,8 @@ coordinating message generation and database storage.
 from typing import List, Dict, Optional
 from src.database.models import Experiment, ChatMessage, RobotProfile
 from src.ai.llm_service import generate_robot_response
+from src.ai.token_counter import count_tokens, get_model_token_limit
+from src.ai.summarization import summarize_messages
 from src.utils.logger import logger
 
 
@@ -74,7 +76,7 @@ async def orchestrate_conversation_turn(
         f"in experiment '{experiment.name}'"
     )
     
-    # Build conversation history
+    # Build conversation history with context window management
     messages = await ChatMessage.filter(experiment=experiment).order_by("created_at")
     
     conversation_history = []
@@ -85,18 +87,57 @@ async def orchestrate_conversation_turn(
             "content": initial_prompt
         })
     else:
-        # Transform roles: each robot sees itself as assistant, other as user
+        # Apply hybrid context window management
+        
+        # Transform roles first
+        history = []
         for msg in messages:
             if msg.robot_name == initiating_robot:
-                conversation_history.append({
+                history.append({
                     "role": "assistant",
                     "content": msg.content
                 })
             else:
-                conversation_history.append({
+                history.append({
                     "role": "user",
                     "content": msg.content
                 })
+        
+        # Check token usage
+        current_tokens = count_tokens(history, active_robot.model_name)
+        max_tokens = get_model_token_limit(active_robot.model_name)
+        threshold = int(max_tokens * 0.8)
+        
+        logger.info(f"Context window: {current_tokens}/{max_tokens} tokens ({current_tokens/max_tokens*100:.1f}%)")
+        
+        if current_tokens > threshold and len(messages) > 5:
+            # Summarize oldest 5 messages
+            logger.info("Token threshold exceeded, summarizing oldest 5 messages")
+            summary_text = await summarize_messages(list(messages[:5]), count=5)
+            
+            # Replace oldest messages with summary
+            conversation_history.append({
+                "role": "system",
+                "content": f"Previous conversation summary: {summary_text}"
+            })
+            
+            # Add recent messages (skip first 5)
+            for msg in messages[5:]:
+                if msg.robot_name == initiating_robot:
+                    conversation_history.append({
+                        "role": "assistant",
+                        "content": msg.content
+                    })
+                else:
+                    conversation_history.append({
+                        "role": "user",
+                        "content": msg.content
+                    })
+            
+            new_tokens = count_tokens(conversation_history, active_robot.model_name)
+            logger.info(f"After summarization: {new_tokens}/{max_tokens} tokens (saved {current_tokens - new_tokens})")
+        else:
+            conversation_history = history
     
     # Generate response
     try:

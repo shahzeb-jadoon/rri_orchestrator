@@ -479,8 +479,14 @@ async def chat_page(experiment_id: int):
         msg_count_label = ui.label('').classes('text-caption text-grey mt-2')
         cost_summary = ui.label('').classes('text-caption text-grey')
         
+        # Token usage progress bar
+        with ui.row().classes('w-full items-center gap-2 mt-2'):
+            ui.label('Context Window:').classes('text-caption')
+            token_progress = ui.linear_progress(value=0).classes('flex-grow')
+            token_label = ui.label('0 / 0 tokens (0%)').classes('text-caption')
+        
         async def update_stats():
-            """Update all statistics."""
+            """Update all statistics including token progress."""
             messages = await ChatMessage.filter(experiment=experiment).all()
             
             # Message count
@@ -494,6 +500,22 @@ async def chat_page(experiment_id: int):
             total_input = sum(m.input_tokens or 0 for m in messages)
             total_output = sum(m.output_tokens or 0 for m in messages)
             
+            # Token usage progress (use robot_a's model as reference)
+            from src.ai.token_counter import get_model_token_limit
+            max_tokens = get_model_token_limit(experiment.robot_a_profile.model_name)
+            token_percentage = min(total_tokens / max_tokens, 1.0) if max_tokens > 0 else 0
+            
+            token_progress.value = token_percentage
+            token_label.text = f'{total_tokens:,} / {max_tokens:,} tokens ({token_percentage*100:.1f}%)'
+            
+            # Color coding for token usage
+            if token_percentage > 0.8:
+                token_progress.props('color=orange')
+            elif token_percentage > 0.6:
+                token_progress.props('color=yellow')
+            else:
+                token_progress.props('color=primary')
+            
             # Per-provider breakdown
             breakdown = {}
             for msg in messages:
@@ -503,7 +525,7 @@ async def chat_page(experiment_id: int):
                 breakdown[provider]['cost'] += msg.cost_usd or 0
                 breakdown[provider]['tokens'] += msg.token_count or 0
             
-            summary = f'Total: {total_tokens} tokens (in: {total_input}, out: {total_output}), ${total_cost:.4f}'
+            summary = f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}'
             if breakdown:
                 summary += ' | Breakdown: '
                 parts = [f'{p}: ${d["cost"]:.4f}' for p, d in breakdown.items()]
