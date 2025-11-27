@@ -48,62 +48,61 @@ async def get_conversation_history(
 
 async def orchestrate_conversation_turn(
     experiment: Experiment,
-    initiating_robot: str,
-    initial_prompt: str = None
+    initiating_robot: str = "robot_a",
+    initial_prompt: Optional[str] = None
 ) -> ChatMessage:
     """
-    Execute one turn of conversation where the specified robot responds.
+    Execute one conversation turn.
     
     Args:
-        experiment: The experiment containing robot profiles
-        initiating_robot: Which robot should speak ("robot_a" or "robot_b")
-        initial_prompt: Optional prompt to start the conversation
+        experiment: Experiment to run
+        initiating_robot: "robot_a" or "robot_b"
+        initial_prompt: Optional prompt for first turn only
         
     Returns:
-        The created ChatMessage
-        
-    Raises:
-        ValueError: If robot profiles not configured or invalid robot specified
+        Created ChatMessage
     """
-    # Load robot profiles
     await experiment.fetch_related("robot_a_profile", "robot_b_profile")
     
-    if not experiment.robot_a_profile or not experiment.robot_b_profile:
-        raise ValueError(
-            f"Experiment '{experiment.name}' does not have robot profiles configured"
-        )
-    
-    # Select active robot
-    if initiating_robot == "robot_a":
-        active_robot = experiment.robot_a_profile
-    elif initiating_robot == "robot_b":
-        active_robot = experiment.robot_b_profile
-    else:
-        raise ValueError(
-            f"Invalid robot specifier: {initiating_robot}. "
-            f"Must be 'robot_a' or 'robot_b'"
-        )
+    active_robot = (
+        experiment.robot_a_profile if initiating_robot == "robot_a"
+        else experiment.robot_b_profile
+    )
     
     logger.info(
         f"Orchestrating turn for {initiating_robot} ({active_robot.name}) "
         f"in experiment '{experiment.name}'"
     )
     
-    # Get conversation history
-    history = await get_conversation_history(experiment)
+    # Build conversation history
+    messages = await ChatMessage.filter(experiment=experiment).order_by("created_at")
     
-    # Add initial prompt if this is the first message
-    if initial_prompt and not history:
-        history.append({
+    conversation_history = []
+    
+    if not messages and initial_prompt:
+        conversation_history.append({
             "role": "user",
             "content": initial_prompt
         })
+    else:
+        # Transform roles: each robot sees itself as assistant, other as user
+        for msg in messages:
+            if msg.robot_name == initiating_robot:
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": msg.content
+                })
+            else:
+                conversation_history.append({
+                    "role": "user",
+                    "content": msg.content
+                })
     
-    # Generate response using robot's AI provider
+    # Generate response
     try:
         response = await generate_robot_response(
             robot_profile=active_robot,
-            conversation_history=history
+            conversation_history=conversation_history
         )
     except Exception as e:
         logger.error(f"Failed to generate response for {active_robot.name}: {e}")

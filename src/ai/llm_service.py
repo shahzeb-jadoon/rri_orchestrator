@@ -120,8 +120,17 @@ async def generate_robot_response(
     
     elapsed_ms = int((time.time() - start_time) * 1000)
     
-    # Extract response data
+    # Extract response data with error handling
+    if not response.choices or len(response.choices) == 0:
+        logger.error(f"Empty response from {model}: {response}")
+        raise Exception(f"AI model {model} returned empty response. This may be due to content filtering or API issues.")
+    
     content = response.choices[0].message.content
+    
+    if not content:
+        logger.error(f"Empty content from {model}")
+        raise Exception(f"AI model {model} returned empty message content.")
+    
     input_tokens = response.usage.prompt_tokens
     output_tokens = response.usage.completion_tokens
     total_tokens = response.usage.total_tokens

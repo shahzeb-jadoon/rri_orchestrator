@@ -59,28 +59,30 @@ class Experiment(Model):
     updated_at = fields.DatetimeField(auto_now=True)
     is_active = fields.BooleanField(default=True)
     
-    # Experiment parameters
-    robot_a_persona = fields.CharField(max_length=100, null=True)  # Deprecated in favor of robot_a_profile
-    robot_b_persona = fields.CharField(max_length=100, null=True)  # Deprecated in favor of robot_b_profile
-    ai_provider = fields.CharField(max_length=50, default="gemini")  # Deprecated in favor of per-robot AI config
+    # Deprecated fields (kept for backward compatibility)
+    robot_a_persona = fields.CharField(max_length=100, null=True)
+    robot_b_persona = fields.CharField(max_length=100, null=True)
+    ai_provider = fields.CharField(max_length=50, default="gemini")
     temperature = fields.FloatField(default=0.7)
     max_tokens = fields.IntField(default=4096)
     
-    # Phase 2: Robot Profile References
+    # Robot configuration
     robot_a_profile = fields.ForeignKeyField(
         "models.RobotProfile",
         related_name="experiments_as_robot_a",
         on_delete=fields.SET_NULL,
-        null=True,
-        description="Robot A configuration with dedicated AI provider"
+        null=True
     )
     robot_b_profile = fields.ForeignKeyField(
         "models.RobotProfile",
         related_name="experiments_as_robot_b",
         on_delete=fields.SET_NULL,
-        null=True,
-        description="Robot B configuration with dedicated AI provider"
+        null=True
     )
+
+    # Conversation settings
+    initial_prompt = fields.TextField(null=True)
+    max_turns = fields.IntField(default=10)
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]

@@ -4,10 +4,13 @@ Experiment management and chat interface pages.
 Provides setup for robot-robot experiments and real-time chat display.
 """
 
-from nicegui import ui
+from nicegui import ui, app
+import asyncio
 from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
+from src.utils.logger import logger
+from src.utils.logger import logger
 
 
 @ui.page('/experiments')
@@ -191,6 +194,8 @@ async def create_experiment_page():
             experiment = await Experiment.create(
                 name=name_input.value,
                 description=description_input.value or '',
+                initial_prompt=initial_prompt_input.value or 'Discuss the ethical implications of AI in healthcare.',
+                max_turns=int(max_turns_input.value or 10),
                 created_by=user,
                 robot_a_profile=robot_a,
                 robot_b_profile=robot_b,
@@ -208,7 +213,7 @@ async def create_experiment_page():
 @ui.page('/experiments/{experiment_id}')
 async def chat_page(experiment_id: int):
     """
-    View experiment with chat interface.
+    Enhanced chat interface with auto-run mode, pause controls, and error display.
     """
     create_navbar()
     
@@ -269,30 +274,80 @@ async def chat_page(experiment_id: int):
     
     await display_messages()
     
+    # State management
+    state = {
+        'is_running': False,
+        'is_paused': False,
+        'pause_after_round': False,
+        'auto_mode': True,  # Default to auto
+        'current_turn_count': 0
+    }
+    
+    # Loading/status indicator
+    status_label = ui.label('Ready').classes('text-caption text-grey')
+    
     ui.separator()
     
     # Controls
     with ui.card().classes('w-full max-w-4xl'):
         ui.label('Controls').classes('text-h6')
         
-        # Initial prompt for first turn
-        initial_prompt = ui.textarea(
-            'Initial Prompt (for first turn only)',
-            value='Discuss the ethical implications of AI in healthcare.'
-        ).classes('w-full').props('outlined rows=2')
+        # Mode selection
+        with ui.row().classes('w-full items-center gap-4'):
+            ui.label('Mode:').classes('text-subtitle2')
+            mode_toggle = ui.toggle(['Manual', 'Auto'], value='Auto' if state['auto_mode'] else 'Manual').classes('mt-2')
+            
+            def update_mode():
+                state['auto_mode'] = (mode_toggle.value == 'Auto')
+            
+            mode_toggle.on('update:model-value', update_mode)
         
-        with ui.row().classes('w-full gap-4 items-center'):
-            # Next turn button
-            async def run_turn():
+        ui.space()
+        
+        # Initial prompt (only for first turn)
+        @ui.refreshable
+        async def show_initial_prompt():
+            msg_count = await ChatMessage.filter(experiment=experiment).count()
+            
+            if msg_count == 0:
+                ui.label('Initial Prompt (first turn only):').classes('text-subtitle2 mt-2')
+                return ui.textarea(
+                    value=experiment.initial_prompt or 'Discuss the ethical implications of AI in healthcare.',
+                    placeholder='Enter the starting prompt'
+                ).classes('w-full').props('outlined rows=2')
+            else:
+                return None
+        
+        initial_prompt_input = await show_initial_prompt()
+        
+        # Buttons
+        with ui.row().classes('w-full gap-4 items-center mt-4'):
+            
+            async def run_single_turn():
+                """Run one turn of the conversation."""
                 messages = await ChatMessage.filter(experiment=experiment).count()
                 
-                # Alternate between robots
+                # Check max turns
+                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
+                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+                max_per_robot = experiment.max_turns or 10
+                
+                if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
+                    status_label.text = f'Max turns reached ({max_per_robot} per robot)'
+                    ui.notify(f'Max turns reached! Each robot has spoken {max_per_robot} times.', type='warning')
+                    return False
+                
+                # Determine which robot speaks
                 initiating_robot = 'robot_a' if messages % 2 == 0 else 'robot_b'
+                robot_name = experiment.robot_a_profile.name if initiating_robot == 'robot_a' else experiment.robot_b_profile.name
                 
-                # Use initial prompt only for first message
-                prompt = initial_prompt.value if messages == 0 else None
+                # Initial prompt only for first turn
+                prompt = None
+                if messages == 0 and initial_prompt_input:
+                    prompt = initial_prompt_input.value
                 
-                ui.notify(f'Generating response...', type='info')
+                status_label.text = f'🔄 Generating response from {robot_name}...'
+                ui.notify(f'Generating response from {robot_name}...', type='info')
                 
                 try:
                     await orchestrate_conversation_turn(
@@ -301,31 +356,107 @@ async def chat_page(experiment_id: int):
                         initial_prompt=prompt
                     )
                     
-                    ui.notify('Turn complete!', type='positive')
                     await display_messages.refresh()
+                    await update_stats()
+                    await show_initial_prompt.refresh()
+                    
+                    status_label.text = f'✓ {robot_name} responded'
+                    ui.notify(f'{robot_name} responded successfully', type='positive')
+                    return True
                     
                 except Exception as e:
-                    ui.notify(f'Error: {str(e)}', type='negative')
+                    logger.error(f"Turn failed: {e}")
+                    status_label.text = f'❌ Error: {str(e)[:50]}...'
+                   
+                    # Display error in chat as system message
+                    with chat_container:
+                        with ui.card().classes('w-full bg-red-100'):
+                            ui.label('⚠️ System Error').classes('text-bold text-red')
+                            ui.label(str(e)).classes('text-caption')
+                    
+                    ui.notify(f'Error: {str(e)}', type='negative', timeout=10000)
+                    return False
             
-            ui.button('▶ Next Turn', on_click=run_turn).props('color=primary')
+            async def run_auto_mode():
+                """Run conversation automatically until max turns or pause."""
+                state['is_running'] = True
+                state['is_paused'] = False
+                
+                start_btn.props('disable')
+                pause_btn.props(remove='disable')
+                pause_round_btn.props(remove='disable')
+                
+                try:
+                    while state['is_running'] and not state['is_paused']:
+                        # Run one turn
+                        success = await run_single_turn()
+                        
+                        if not success:
+                            break
+                        
+                        # Check for pause after round
+                        messages = await ChatMessage.filter(experiment=experiment).count()
+                        if state['pause_after_round'] and messages % 2 == 0:
+                            state['is_paused'] = True
+                            ui.notify('Paused after completing round', type='info')
+                            break
+                        
+                        # Short delay between turns
+                        await asyncio.sleep(1)
+                    
+                finally:
+                    state['is_running'] = False
+                    state['pause_after_round'] = False
+                    start_btn.props(remove='disable')
+                    pause_btn.props('disable')
+                    pause_round_btn.props('disable')
             
-            # Message count
-            msg_count_label = ui.label('')
+            async def start_conversation():
+                """Start conversation (auto or manual)."""
+                if state['auto_mode']:
+                    await run_auto_mode()
+                else:
+                    await run_single_turn()
             
-            async def update_count():
-                count = await ChatMessage.filter(experiment=experiment).count()
-                msg_count_label.text = f'{count} messages'
+            def pause_immediately():
+                """Pause conversation immediately."""
+                state['is_paused'] = True
+                status_label.text = 'Paused'
+                ui.notify('Conversation paused', type='info')
             
-            ui.timer(1.0, update_count, once=True)
+            def pause_after_round():
+                """Pause after current round completes."""
+                state['pause_after_round'] = True
+                ui.notify('Will pause after current round finishes', type='info')
+            
+            # Determine button text
+            msg_count = await ChatMessage.filter(experiment=experiment).count()
+            start_text = '▶ Start Conversation' if msg_count == 0 else ('▶ Continue' if state['auto_mode'] else '▶ Next Turn')
+            
+            start_btn = ui.button(start_text, on_click=start_conversation).props('color=primary')
+            pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')
+            pause_round_btn = ui.button('⏸ Pause After Round', on_click=pause_after_round).props('flat disable')
         
-        # Cost summary
-        cost_summary = ui.label('').classes('text-caption text-grey mt-2')
+        # Stats
+        ui.separator()
         
-        async def update_cost():
+        msg_count_label = ui.label('').classes('text-caption text-grey mt-2')
+        cost_summary = ui.label('').classes('text-caption text-grey')
+        
+        async def update_stats():
+            """Update all statistics."""
             messages = await ChatMessage.filter(experiment=experiment).all()
             
-            total_cost = sum(msg.cost_usd or 0 for msg in messages)
-            total_tokens = sum(msg.token_count or 0 for msg in messages)
+            # Message count
+            robot_a_count = sum(1 for m in messages if m.robot_name == 'robot_a')
+            robot_b_count = sum(1 for m in messages if m.robot_name == 'robot_b')
+            msg_count_label.text = f'{len(messages)} messages ({robot_a_count} from {experiment.robot_a_profile.name}, {robot_b_count} from {experiment.robot_b_profile.name})'
+            
+            # Cost and tokens
+            total_cost = sum(m.cost_usd or 0 for m in messages)
+            total_tokens = sum(m.token_count or 0 for m in messages)
+            total_input = sum(m.input_tokens or 0 for m in messages)
+            total_output = sum(m.output_tokens or 0 for m in messages)
             
             # Per-provider breakdown
             breakdown = {}
@@ -336,7 +467,7 @@ async def chat_page(experiment_id: int):
                 breakdown[provider]['cost'] += msg.cost_usd or 0
                 breakdown[provider]['tokens'] += msg.token_count or 0
             
-            summary = f'Total: {total_tokens} tokens, ${total_cost:.4f}'
+            summary = f'Total: {total_tokens} tokens (in: {total_input}, out: {total_output}), ${total_cost:.4f}'
             if breakdown:
                 summary += ' | Breakdown: '
                 parts = [f'{p}: ${d["cost"]:.4f}' for p, d in breakdown.items()]
@@ -344,4 +475,5 @@ async def chat_page(experiment_id: int):
             
             cost_summary.text = summary
         
-        ui.timer(1.0, update_cost, once=True)
+        # Initial stats
+        await update_stats()
