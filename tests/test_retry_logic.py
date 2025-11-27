@@ -23,11 +23,11 @@ async def test_retry_success_on_first_attempt():
 async def test_retry_success_after_rate_limit():
     """Test that function retries and succeeds after rate limit"""
     mock_func = AsyncMock(side_effect=[
-        RateLimitError("Rate limited"),
+        RateLimitError("Rate limited", llm_provider="openai", model="gpt-4"),
         "success"
     ])
     
-    result = await retry_with_backoff(mock_func, max_retries=3)
+    result = await retry_with_backoff(mock_func, max_retries=3, base_delay=0.01)
     
     assert result == "success"
     assert mock_func.call_count == 2
@@ -36,10 +36,10 @@ async def test_retry_success_after_rate_limit():
 @pytest.mark.asyncio
 async def test_retry_fails_after_max_attempts():
     """Test that function fails after max retries"""
-    mock_func = AsyncMock(side_effect=RateLimitError("Always rate limited"))
+    mock_func = AsyncMock(side_effect=RateLimitError("Always rate limited", llm_provider="openai", model="gpt-4"))
     
     with pytest.raises(RateLimitError):
-        await retry_with_backoff(mock_func, max_retries=3)
+        await retry_with_backoff(mock_func, max_retries=3, base_delay=0.01)
     
     assert mock_func.call_count == 3
 
@@ -48,11 +48,11 @@ async def test_retry_fails_after_max_attempts():
 async def test_retry_api_error():
     """Test retry on API errors"""
     mock_func = AsyncMock(side_effect=[
-        APIError("Network error"),
+        APIError(status_code=500, message="Network error", llm_provider="openai", model="gpt-4"),
         "success"
     ])
     
-    result = await retry_with_backoff(mock_func, max_retries=3)
+    result = await retry_with_backoff(mock_func, max_retries=3, base_delay=0.01)
     
     assert result == "success"
     assert mock_func.call_count == 2

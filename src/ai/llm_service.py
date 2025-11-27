@@ -163,17 +163,17 @@ async def generate_robot_response(
         f"using {model} (temp={robot_profile.default_temperature})"
     )
     
-    # Call LiteLLM
-    start_time = time.time()
-    try:
-        response = await acompletion(
+    # Define the actual API call to be retried
+    async def make_llm_call():
+        return await acompletion(
             model=model,
             messages=messages,
             temperature=robot_profile.default_temperature,
             max_tokens=max_tokens or settings.max_tokens,
             api_key=api_key
         )
-    
+
+    # Call LiteLLM with retry logic
     start_time = time.time()
     try:
         response = await retry_with_backoff(make_llm_call)
