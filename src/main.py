@@ -18,15 +18,10 @@ from src.ui.pages import robots  # noqa: F401
 from src.ui.pages import experiments  # noqa: F401
 
 
-@asynccontextmanager
-async def lifespan():
+async def startup():
     """
-    Application lifecycle manager.
-    
-    This handles startup and shutdown tasks like database initialization
-    and cleanup.
+    Application startup handler.
     """
-    # Startup
     logger.info("Starting RRI Orchestrator...")
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Host: {settings.host}:{settings.port}")
@@ -42,18 +37,20 @@ async def lifespan():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
-    
-    yield
-    
-    # Shutdown
+
+
+async def shutdown():
+    """
+    Application shutdown handler.
+    """
     logger.info("Shutting down RRI Orchestrator...")
     await close_database()
     logger.info("Database connections closed")
 
 
 # Configure NiceGUI app
-app.on_startup(lifespan().__aenter__)
-app.on_shutdown(lifespan().__aexit__)
+app.on_startup(startup)
+app.on_shutdown(shutdown)
 
 
 @ui.page("/")

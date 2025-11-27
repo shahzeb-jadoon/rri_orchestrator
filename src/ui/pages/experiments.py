@@ -297,8 +297,16 @@ async def chat_page(experiment_id: int):
             ui.label('Mode:').classes('text-subtitle2')
             mode_toggle = ui.toggle(['Manual', 'Auto'], value='Auto' if state['auto_mode'] else 'Manual').classes('mt-2')
             
-            def update_mode():
+            async def update_mode():
                 state['auto_mode'] = (mode_toggle.value == 'Auto')
+                # Update button text based on mode
+                msg_count = await ChatMessage.filter(experiment=experiment).count()
+                if msg_count == 0:
+                    start_btn.text = '▶ Start Conversation'
+                elif state['auto_mode']:
+                    start_btn.text = '▶ Resume Conversation'
+                else:
+                    start_btn.text = '▶ Next Turn'
             
             mode_toggle.on('update:model-value', update_mode)
         
@@ -431,7 +439,7 @@ async def chat_page(experiment_id: int):
             
             # Determine button text
             msg_count = await ChatMessage.filter(experiment=experiment).count()
-            start_text = '▶ Start Conversation' if msg_count == 0 else ('▶ Continue' if state['auto_mode'] else '▶ Next Turn')
+            start_text = '▶ Start Conversation' if msg_count == 0 else ('▶ Resume Conversation' if state['auto_mode'] else '▶ Next Turn')
             
             start_btn = ui.button(start_text, on_click=start_conversation).props('color=primary')
             pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')

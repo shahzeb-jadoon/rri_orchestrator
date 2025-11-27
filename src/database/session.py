@@ -10,6 +10,7 @@ from typing import List, Optional
 from tortoise import Tortoise, connections
 
 from src.config import settings
+from src.utils.logger import logger
 
 
 # Database configuration for Tortoise ORM
