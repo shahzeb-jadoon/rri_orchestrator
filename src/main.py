@@ -15,6 +15,7 @@ from src.utils import logger
 
 # Import UI pages to register routes
 from src.ui.pages import robots  # noqa: F401
+from src.ui.pages import experiments  # noqa: F401
 
 
 @asynccontextmanager
