@@ -10,7 +10,62 @@ from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
-from src.utils.logger import logger
+
+
+async def export_all_experiments():
+    """Export all experiments to a single JSON file."""
+    import json
+    from datetime import datetime
+    
+    experiments = await Experiment.all().prefetch_related('robot_a_profile', 'robot_b_profile', 'created_by')
+    
+    all_data = []
+    for exp in experiments:
+        messages = await ChatMessage.filter(experiment=exp).order_by('created_at')
+        
+        exp_data = {
+            "experiment": {
+                "id": exp.id,
+                "name": exp.name,
+                "description": exp.description,
+                "initial_prompt": exp.initial_prompt,
+                "max_turns": exp.max_turns,
+                "created_at": exp.created_at.isoformat(),
+                "created_by": exp.created_by.username
+            },
+            "robots": {
+                "robot_a": {
+                    "name": exp.robot_a_profile.name,
+                    "provider": exp.robot_a_profile.ai_provider,
+                    "model": exp.robot_a_profile.model_name,
+                },
+                "robot_b": {
+                    "name": exp.robot_b_profile.name,
+                    "provider": exp.robot_b_profile.ai_provider,
+                    "model": exp.robot_b_profile.model_name,
+                }
+            },
+            "messages": [
+                {
+                    "timestamp": msg.created_at.isoformat(),
+                    "robot": msg.robot_name,
+                    "content": msg.content,
+                    "tokens": msg.token_count,
+                    "cost_usd": msg.cost_usd
+                }
+                for msg in messages
+            ],
+            "summary": {
+                "total_messages": len(messages),
+                "total_tokens": sum(m.token_count or 0 for m in messages),
+                "total_cost_usd": sum(m.cost_usd or 0 for m in messages)
+            }
+        }
+        all_data.append(exp_data)
+    
+    filename = f"all_experiments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    ui.download(json.dumps(all_data, indent=2).encode(), filename)
+    ui.notify(f'Exported {len(experiments)} experiments to {filename}', type='positive')
 
 
 @ui.page('/experiments')
@@ -20,7 +75,11 @@ async def experiments_list_page():
     """
     create_navbar()
     
-    ui.label('Experiments').classes('text-h4')
+    # Header with export button
+    with ui.row().classes('w-full items-center justify-between mb-4'):
+        ui.label('Experiments').classes('text-h3')
+        ui.button('📥 Export All', on_click=export_all_experiments).props('flat color=primary')
+    
     ui.label('Manage robot-robot interaction experiments').classes('text-subtitle1 text-grey')
     
     ui.space()
@@ -34,25 +93,9 @@ async def experiments_list_page():
     experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile')
     
     if not experiments:
-        with ui.card():
-            ui.label('No experiments yet. Create your first one!').classes('text-grey')
+        ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
     else:
-        # Table of experiments
-        columns = [
-            {'name': 'name', 'label': 'Name', 'field': 'name', 'align': 'left'},
-            {'name': 'robot_a', 'label': 'Robot A', 'field': 'robot_a', 'align': 'left'},
-            {'name': 'robot_b', 'label': 'Robot B', 'field': 'robot_b', 'align': 'left'},
-            {'name': 'messages', 'label': 'Messages', 'field': 'messages', 'align': 'center'},
-            {'name': 'actions', 'label': 'Actions', 'field': 'actions', 'align': 'right'},
-        ]
-        
-        rows = []
         for exp in experiments:
-            msg_count = await ChatMessage.filter(experiment=exp).count()
-            rows.append({
-                'id': exp.id,
-                'name': exp.name,
-                'robot_a': exp.robot_a_profile.name if exp.robot_a_profile else 'N/A',
                 'robot_b': exp.robot_b_profile.name if exp.robot_b_profile else 'N/A',
                 'messages': msg_count,
                 'actions': exp.id
