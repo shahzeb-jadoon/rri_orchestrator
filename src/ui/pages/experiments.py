@@ -307,6 +307,14 @@ async def chat_page(experiment_id: int):
                     start_btn.text = '▶ Resume Conversation'
                 else:
                     start_btn.text = '▶ Next Turn'
+                
+                # Show/hide buttons based on mode
+                if state['auto_mode']:
+                    run_round_btn.set_visibility(False)
+                    pause_round_btn.set_visibility(True)
+                else:
+                    run_round_btn.set_visibility(True)
+                    pause_round_btn.set_visibility(False)
             
             mode_toggle.on('update:model-value', update_mode)
         
@@ -385,6 +393,19 @@ async def chat_page(experiment_id: int):
                     ui.notify(f'Error: {str(e)}', type='negative', timeout=10000)
                     return False
             
+            async def run_full_round():
+                """Run a full round (both robots speak once)."""
+                # Run robot A
+                success_a = await run_single_turn()
+                if not success_a:
+                    return
+                
+                # Short delay between robots
+                await asyncio.sleep(0.5)
+                
+                # Run robot B
+                await run_single_turn()
+            
             async def run_auto_mode():
                 """Run conversation automatically until max turns or pause."""
                 state['is_running'] = True
@@ -442,8 +463,15 @@ async def chat_page(experiment_id: int):
             start_text = '▶ Start Conversation' if msg_count == 0 else ('▶ Resume Conversation' if state['auto_mode'] else '▶ Next Turn')
             
             start_btn = ui.button(start_text, on_click=start_conversation).props('color=primary')
+            run_round_btn = ui.button('▶▶ Run Round', on_click=run_full_round).props('color=secondary')
             pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')
             pause_round_btn = ui.button('⏸ Pause After Round', on_click=pause_after_round).props('flat disable')
+            
+            # Set initial visibility based on mode
+            if state['auto_mode']:
+                run_round_btn.set_visibility(False)
+            else:
+                pause_round_btn.set_visibility(False)
         
         # Stats
         ui.separator()
