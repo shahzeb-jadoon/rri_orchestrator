@@ -595,7 +595,9 @@ async def chat_page(experiment_id: int):
         ui.separator()
         
         msg_count_label = ui.label('').classes('text-caption text-grey mt-2')
-        cost_summary = ui.label('').classes('text-caption text-grey')
+        
+        # Stats container with proper formatting
+        stats_container = ui.column().classes('w-full gap-1 mt-2')
         
         # Token usage progress bar
         with ui.row().classes('w-full items-center gap-2 mt-2'):
@@ -634,15 +636,6 @@ async def chat_page(experiment_id: int):
             else:
                 token_progress.props('color=primary')
             
-            # Per-provider breakdown
-            breakdown = {}
-            for msg in messages:
-                provider = msg.robot_provider or 'unknown'
-                if provider not in breakdown:
-                    breakdown[provider] = {'cost': 0, 'tokens': 0}
-                breakdown[provider]['cost'] += msg.cost_usd or 0
-                breakdown[provider]['tokens'] += msg.token_count or 0
-            
             # Per-robot detailed breakdown
             robot_stats = {}
             for msg in messages:
@@ -667,21 +660,33 @@ async def chat_page(experiment_id: int):
                 robot_stats[robot_key]['cost'] += msg.cost_usd or 0
                 robot_stats[robot_key]['count'] += 1
             
-            # Build summary with per-robot stats
-            summary = f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}\n\n'
+            # Clear and rebuild stats display
+            stats_container.clear()
             
-            if robot_stats:
-                summary += 'Per-Robot Breakdown:\n'
-                for robot_key, stats in robot_stats.items():
-                    avg_tokens = stats['tokens'] / stats['count'] if stats['count'] > 0 else 0
-                    summary += f"  • {stats['name']} ({stats['provider']}/{stats['model']}):\n"
-                    summary += f"      Tokens: {stats['tokens']:,} (in: {stats['input_tokens']:,}, out: {stats['output_tokens']:,})\n"
-                    summary += f"      Cost: ${stats['cost']:.4f}"
-                    if stats['cost'] == 0:
-                        summary += " (free tier)"
-                    summary += f"\n      {stats['count']} messages, avg {avg_tokens:.0f} tokens/msg\n"
-            
-            cost_summary.text = summary
+            with stats_container:
+                # Total (bold)
+                ui.label(f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}').classes('text-bold text-caption')
+                
+                # Per-robot breakdown
+                if robot_stats:
+                    ui.label('Per-Robot Breakdown:').classes('text-caption mt-2')
+                    for robot_key, stats in robot_stats.items():
+                        avg_tokens = stats['tokens'] / stats['count'] if stats['count'] > 0 else 0
+                        
+                        # Robot name
+                        ui.label(f"• {stats['name']} ({stats['provider']}/{stats['model']})").classes('text-caption ml-4')
+                        
+                        # Tokens
+                        ui.label(f"Tokens: {stats['tokens']:,} (in: {stats['input_tokens']:,}, out: {stats['output_tokens']:,})").classes('text-caption ml-8 text-grey-7')
+                        
+                        # Cost
+                        cost_text = f"Cost: ${stats['cost']:.4f}"
+                        if stats['cost'] == 0:
+                            cost_text += " (free tier)"
+                        ui.label(cost_text).classes('text-caption ml-8 text-grey-7')
+                        
+                        # Message stats
+                        ui.label(f"{stats['count']} messages, avg {avg_tokens:.0f} tokens/msg").classes('text-caption ml-8 text-grey-7')
         
         # Initial stats
         await update_stats()
