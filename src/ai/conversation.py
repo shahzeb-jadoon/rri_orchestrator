@@ -5,7 +5,7 @@ This module manages multi-turn conversations between two robots,
 coordinating message generation and database storage.
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from src.database.models import Experiment, ChatMessage, RobotProfile
 from src.ai.llm_service import generate_robot_response
 from src.utils.logger import logger
