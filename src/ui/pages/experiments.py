@@ -51,14 +51,14 @@ async def export_all_experiments():
                     "robot": msg.robot_name,
                     "content": msg.content,
                     "tokens": msg.token_count,
-                    "cost_usd": msg.cost_usd
+                    "cost_usd": float(msg.cost_usd) if msg.cost_usd else 0.0
                 }
                 for msg in messages
             ],
             "summary": {
                 "total_messages": len(messages),
                 "total_tokens": sum(m.token_count or 0 for m in messages),
-                "total_cost_usd": sum(m.cost_usd or 0 for m in messages)
+                "total_cost_usd": float(sum(m.cost_usd or 0 for m in messages))
             }
         }
         all_data.append(exp_data)
@@ -92,34 +92,32 @@ async def experiments_list_page():
     # Load experiments
     experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile')
     
+    async def delete_experiment(exp_id: int):
+        await Experiment.filter(id=exp_id).delete()
+        ui.notify('Experiment deleted', type='positive')
+        ui.navigate.to('/experiments')
+
     if not experiments:
         ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
     else:
         for exp in experiments:
-                'robot_b': exp.robot_b_profile.name if exp.robot_b_profile else 'N/A',
-                'messages': msg_count,
-                'actions': exp.id
-            })
-        
-        table = ui.table(columns=columns, rows=rows).classes('w-full')
-        
-        # Add action buttons
-        table.add_slot('body-cell-actions', '''
-            <q-td key="actions" :props="props">
-                <q-btn flat dense icon="chat" @click="$parent.$emit('view', props.row)" label="View" />
-                <q-btn flat dense icon="delete" color="red" @click="$parent.$emit('delete', props.row)" />
-            </q-td>
-        ''')
-        
-        table.on('view', lambda e: ui.navigate.to(f'/experiments/{e.args["id"]}'))
-        
-        async def delete_experiment(e):
-            exp_id = e.args['id']
-            await Experiment.filter(id=exp_id).delete()
-            ui.notify('Experiment deleted', type='positive')
-            ui.navigate.to('/experiments')
-        
-        table.on('delete', delete_experiment)
+            with ui.card().classes('w-full'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    ui.label(exp.name).classes('text-h5')
+                    with ui.row().classes('gap-2'):
+                        ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
+                        ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
+                        ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
+                        ui.button(icon='delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=red')
+                
+                ui.label(
+                    f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
+                    f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
+                ).classes('text-caption text-grey')
+                
+                # Stats
+                msg_count = await ChatMessage.filter(experiment=exp).count()
+                ui.label(f'{msg_count} messages').classes('text-caption')
 
 
 @ui.page('/experiments/create')
