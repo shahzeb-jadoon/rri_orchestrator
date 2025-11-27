@@ -405,53 +405,6 @@ async def chat_page(experiment_id: int):
     # Loading/status indicator
     status_label = ui.label('Ready').classes('text-caption text-grey')
     
-    # Max turns extension UI
-    @ui.refreshable
-    async def max_turns_extension_ui():
-        """Display max turns extension controls when limit is reached."""
-        robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
-        robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
-        max_per_robot = experiment.max_turns or 10
-        
-        if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
-            with ui.card().classes('w-full bg-orange-50 border-2 border-orange-300 mt-4'):
-                ui.label('🎯 Max Turns Reached').classes('text-h6 text-orange-800')
-                ui.label(f'Each robot has spoken {max_per_robot} times.').classes('text-caption')
-                
-                ui.separator()
-                
-                ui.label('Continue Auto-Run for:').classes('text-subtitle2 mt-2')
-                
-                async def extend_and_continue(additional_turns: int):
-                    """Extend max turns and resume if in auto mode."""
-                    experiment.max_turns += additional_turns
-                    await experiment.save()
-                    
-                    state['max_turns_notified'] = False
-                    
-                    await max_turns_extension_ui.refresh()
-                    
-                    if state['auto_mode']:
-                        ui.notify(f'Extended by {additional_turns} turns. Resuming...', type='positive')
-                        await run_auto_mode()
-                    else:
-                        ui.notify(f'Extended by {additional_turns} turns.', type='positive')
-                
-                with ui.row().classes('gap-2 mt-2'):
-                    ui.button('+1 Turn', on_click=lambda: extend_and_continue(1)).props('size=sm color=primary')
-                    ui.button('+2 Turns', on_click=lambda: extend_and_continue(2)).props('size=sm color=primary')
-                    ui.button('+5 Turns', on_click=lambda: extend_and_continue(5)).props('size=sm color=primary')
-                
-                with ui.row().classes('gap-2 items-center mt-2'):
-                    custom_turns = ui.number(label='Custom', value=10, min=1, max=100).classes('w-32').props('dense outlined')
-                    ui.button('Continue', on_click=lambda: extend_and_continue(int(custom_turns.value))).props('size=sm color=primary')
-                
-                ui.separator()
-                
-                ui.label('Or switch to Manual mode to continue turn-by-turn.').classes('text-caption text-grey')
-    
-    await max_turns_extension_ui()
-    
     ui.separator()
     
     # Controls
@@ -481,8 +434,52 @@ async def chat_page(experiment_id: int):
                 else:
                     run_round_btn.set_visibility(True)
                     pause_round_btn.set_visibility(False)
+                
+                # Refresh max turns UI
+                await max_turns_status.refresh()
             
             mode_toggle.on('update:model-value', update_mode)
+        
+        # Max turns status and extension
+        @ui.refreshable
+        async def max_turns_status():
+            """Display max turns status and extension options."""
+            robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
+            robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+            max_per_robot = experiment.max_turns or 10
+            
+            if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
+                with ui.card().classes('w-full bg-orange-50 border-l-4 border-orange-500 mt-2'):
+                    ui.label('🎯 Max Turns Reached').classes('text-subtitle2 text-orange-800')
+                    ui.label(f'Each robot has spoken {max_per_robot} times.').classes('text-caption')
+                    
+                    # Only show extension options in auto mode
+                    if state['auto_mode']:
+                        ui.separator()
+                        ui.label('Continue for:').classes('text-caption font-bold mt-2')
+                        
+                        async def extend_and_continue(additional_turns: int):
+                            """Extend max turns and resume."""
+                            experiment.max_turns += additional_turns
+                            await experiment.save()
+                            state['max_turns_notified'] = False
+                            await max_turns_status.refresh()
+                            ui.notify(f'Extended by {additional_turns} turns. Resuming...', type='positive')
+                            await run_auto_mode()
+                        
+                        with ui.row().classes('gap-2 mt-2'):
+                            ui.button('+1', on_click=lambda: extend_and_continue(1)).props('size=sm')
+                            ui.button('+2', on_click=lambda: extend_and_continue(2)).props('size=sm')
+                            ui.button('+5', on_click=lambda: extend_and_continue(5)).props('size=sm')
+                        
+                        with ui.row().classes('gap-2 items-center mt-2'):
+                            custom_turns = ui.number(label='Custom', value=10, min=1, max=100).classes('w-24').props('dense outlined')
+                            ui.button('Go', on_click=lambda: extend_and_continue(int(custom_turns.value))).props('size=sm')
+                    else:
+                        # Manual mode: just show info
+                        ui.label('Click "Next Turn" to continue (auto-increments turns).').classes('text-caption text-grey mt-1')
+        
+        await max_turns_status()
         
         ui.space()
         
@@ -515,21 +512,27 @@ async def chat_page(experiment_id: int):
                 max_per_robot = experiment.max_turns or 10
                 
                 if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
-                    status_label.text = f'Max turns reached ({max_per_robot} per robot)'
-                    
-                    # Refresh extension UI
-                    await max_turns_extension_ui.refresh()
-                    
-                    # Only notify in manual mode, and only once
-                    if not state['auto_mode'] and not state['max_turns_notified']:
+                    # Notify in both modes (once)
+                    if not state['max_turns_notified']:
                         ui.notify(
                             f'Max turns reached! Each robot has spoken {max_per_robot} times.',
                             type='warning',
                             timeout=5000
                         )
                         state['max_turns_notified'] = True
+                        await max_turns_status.refresh()
                     
-                    return False
+                    # In manual mode: auto-increment by 1 and continue
+                    if not state['auto_mode']:
+                        experiment.max_turns += 1
+                        await experiment.save()
+                        ui.notify(f'Max turns extended to {experiment.max_turns}', type='info', timeout=2000)
+                        await max_turns_status.refresh()
+                    else:
+                        # In auto mode: stop and show extension UI
+                        status_label.text = f'Max turns reached ({max_per_robot} per robot)'
+                        await max_turns_status.refresh()
+                        return False
                 
                 # Determine which robot speaks
                 initiating_robot = 'robot_a' if messages % 2 == 0 else 'robot_b'
@@ -553,7 +556,7 @@ async def chat_page(experiment_id: int):
                     await display_messages.refresh()
                     await update_stats()
                     await show_initial_prompt.refresh()
-                    await max_turns_extension_ui.refresh()
+                    await max_turns_status.refresh()
                     
                     status_label.text = f'✓ {robot_name} responded'
                     ui.notify(f'{robot_name} responded successfully', type='positive')
