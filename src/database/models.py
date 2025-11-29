@@ -59,12 +59,30 @@ class Experiment(Model):
     updated_at = fields.DatetimeField(auto_now=True)
     is_active = fields.BooleanField(default=True)
     
-    # Experiment parameters
+    # Deprecated fields (kept for backward compatibility)
     robot_a_persona = fields.CharField(max_length=100, null=True)
     robot_b_persona = fields.CharField(max_length=100, null=True)
     ai_provider = fields.CharField(max_length=50, default="gemini")
     temperature = fields.FloatField(default=0.7)
     max_tokens = fields.IntField(default=4096)
+    
+    # Robot configuration
+    robot_a_profile = fields.ForeignKeyField(
+        "models.RobotProfile",
+        related_name="experiments_as_robot_a",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    robot_b_profile = fields.ForeignKeyField(
+        "models.RobotProfile",
+        related_name="experiments_as_robot_b",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+
+    # Conversation settings
+    initial_prompt = fields.TextField(null=True)
+    max_turns = fields.IntField(default=10)
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
@@ -96,18 +114,29 @@ class ChatMessage(Model):
     content = fields.TextField()
     created_at = fields.DatetimeField(auto_now_add=True)
     
-    # Metadata
-    token_count = fields.IntField(null=True)
+    # AI metadata
     model_used = fields.CharField(max_length=100, null=True)
+    
+    # Token tracking (split for cost analysis)
+    input_tokens = fields.IntField(default=0)  # Prompt/context tokens
+    output_tokens = fields.IntField(default=0)  # Response/completion tokens
+    token_count = fields.IntField(default=0)  # Total (for backward compatibility)
+    
+    # Cost and performance
+    cost_usd = fields.DecimalField(max_digits=10, decimal_places=6, null=True)
     response_time_ms = fields.IntField(null=True)
+    
+    # Robot identification (for cost breakdown)
+    robot_name = fields.CharField(max_length=100, null=True)  # "robot_a" or "robot_b"
+    robot_provider = fields.CharField(max_length=50, null=True)  # "openai", "gemini", etc.
     
     class Meta:
         table = "chat_messages"
         ordering = ["created_at"]
     
     def __str__(self) -> str:
-        content_preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
-        return f"Message({self.role}: {content_preview})"
+        preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
+        return f"ChatMessage({self.role}: {preview})"
 
 
 class ConversationSummary(Model):
@@ -164,6 +193,18 @@ class RobotProfile(Model):
     # Behavioral parameters
     default_temperature = fields.FloatField(default=0.7)
     personality_traits = fields.JSONField(default=dict)
+    
+    # AI Configuration (Phase 2: Per-Robot AI Selection)
+    ai_provider = fields.CharField(
+        max_length=50,
+        default="gemini",
+        description="AI provider: openai, gemini, anthropic, etc."
+    )
+    model_name = fields.CharField(
+        max_length=100,
+        null=True,
+        description="Specific model variant: gpt-4o, gemini-2.0-flash, etc."
+    )
     
     class Meta:
         table = "robot_profiles"

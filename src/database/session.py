@@ -10,6 +10,7 @@ from typing import List, Optional
 from tortoise import Tortoise, connections
 
 from src.config import settings
+from src.utils.logger import logger
 
 
 # Database configuration for Tortoise ORM
@@ -27,19 +28,27 @@ TORTOISE_ORM = {
 }
 
 
-async def init_database() -> None:
-    """
-    Initialize the database connection and create tables if needed.
+async def init_database():
+    """Initialize database and ensure schema is up to date."""
+    db_url = settings.database_url.replace("postgresql+asyncpg://", "postgres://")
     
-    This should be called once when the application starts.
-    In production, use Aerich for migrations instead of generate_schemas.
-    """
-    await Tortoise.init(config=TORTOISE_ORM)
+    await Tortoise.init(
+        db_url=db_url,
+        modules={"models": ["src.database.models"]}
+    )
     
-    # Only generate schemas in development
-    # In production, use proper migrations
-    if settings.is_development:
-        await Tortoise.generate_schemas()
+    await Tortoise.generate_schemas()
+    
+    # Add new columns if they don't exist
+    conn = connections.get("default")
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS initial_prompt TEXT"
+    )
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS max_turns INTEGER DEFAULT 10"
+    )
+    
+    logger.info("Database initialized successfully")
 
 
 async def close_database() -> None:
