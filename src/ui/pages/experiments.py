@@ -254,18 +254,42 @@ async def create_experiment_page():
 
 
 async def export_to_csv(experiment_id: int):
-    """Export experiment conversation to CSV format."""
+    """Export experiment conversation to CSV format with metadata."""
     import csv
     from io import StringIO
     
     experiment = await Experiment.get(id=experiment_id)
-    await experiment.fetch_related('robot_a_profile', 'robot_b_profile')
+    await experiment.fetch_related('robot_a_profile', 'robot_b_profile', 'created_by')
     messages = await ChatMessage.filter(experiment=experiment).order_by('created_at')
     
     output = StringIO()
     writer = csv.writer(output)
     
-    # Header row
+    # Metadata section
+    writer.writerow(['EXPERIMENT METADATA'])
+    writer.writerow(['Name', experiment.name])
+    writer.writerow(['Description', experiment.description or ''])
+    writer.writerow(['Topic/Initial Prompt', experiment.initial_prompt])
+    writer.writerow(['Max Turns', experiment.max_turns])
+    writer.writerow(['Created By', experiment.created_by.username])
+    writer.writerow(['Created At', experiment.created_at.isoformat()])
+    writer.writerow([])  # Blank row
+    
+    # Robot configuration section
+    writer.writerow(['ROBOT CONFIGURATION'])
+    writer.writerow(['Robot A Name', experiment.robot_a_profile.name])
+    writer.writerow(['Robot A Provider', experiment.robot_a_profile.ai_provider])
+    writer.writerow(['Robot A Model', experiment.robot_a_profile.model_name])
+    writer.writerow(['Robot A System Prompt', experiment.robot_a_profile.system_prompt])
+    writer.writerow([])  # Blank row
+    writer.writerow(['Robot B Name', experiment.robot_b_profile.name])
+    writer.writerow(['Robot B Provider', experiment.robot_b_profile.ai_provider])
+    writer.writerow(['Robot B Model', experiment.robot_b_profile.model_name])
+    writer.writerow(['Robot B System Prompt', experiment.robot_b_profile.system_prompt])
+    writer.writerow([])  # Blank row
+    
+    # Conversation data section
+    writer.writerow(['CONVERSATION MESSAGES'])
     writer.writerow([
         'timestamp', 'robot_name', 'robot_display_name', 'robot_provider',
         'model', 'message', 'tokens_total', 'tokens_in', 'tokens_out',
@@ -286,7 +310,7 @@ async def export_to_csv(experiment_id: int):
             msg.token_count,
             msg.input_tokens,
             msg.output_tokens,
-            msg.cost_usd,
+            float(msg.cost_usd) if msg.cost_usd else 0.0,  # Convert Decimal to float
             msg.response_time_ms
         ])
     
@@ -344,7 +368,7 @@ async def export_to_json(experiment_id: int):
                     "input": msg.input_tokens,
                     "output": msg.output_tokens
                 },
-                "cost_usd": msg.cost_usd,
+                "cost_usd": float(msg.cost_usd) if msg.cost_usd else 0.0,  # Convert Decimal to float
                 "response_time_ms": msg.response_time_ms
             }
             for msg in messages
@@ -354,7 +378,7 @@ async def export_to_json(experiment_id: int):
             "robot_a_messages": sum(1 for m in messages if m.robot_name == 'robot_a'),
             "robot_b_messages": sum(1 for m in messages if m.robot_name == 'robot_b'),
             "total_tokens": sum(m.token_count or 0 for m in messages),
-            "total_cost_usd": sum(m.cost_usd or 0 for m in messages),
+            "total_cost_usd": float(sum(m.cost_usd or 0 for m in messages)),  # Convert Decimal to float
             "duration_seconds": (messages[-1].created_at - messages[0].created_at).total_seconds() if messages else 0
         }
     }
