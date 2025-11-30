@@ -6,6 +6,7 @@ Setup and monitor robot-robot experiments.
 
 from nicegui import ui, app
 import asyncio
+from starlette.requests import Request
 from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
@@ -262,11 +263,18 @@ async def experiments_list_page():
 
 
 @ui.page('/experiments/create')
-async def create_experiment_page():
+async def create_experiment_page(request: Request):
     """
     Create a new experiment with robot selection.
     """
     create_navbar()
+    
+    # Get current user from middleware
+    user = getattr(request.state, 'user', None)
+    
+    if not user:
+        ui.label('Please log in to create experiments').classes('text-negative')
+        return
     
     ui.label('Create Experiment').classes('text-h4')
     
@@ -356,15 +364,6 @@ async def create_experiment_page():
             
             if robot_a_select.value == robot_b_select.value:
                 ui.notify('Please select different robots for A and B', type='warning')
-                return
-            
-            # Get current user from request
-            from starlette.requests import Request
-            request: Request = app._request  # Access current request
-            user = getattr(request.state, 'user', None)
-            
-            if not user:
-                ui.notify('Please log in to create experiments', type='negative')
                 return
             
             # Get robot profiles
