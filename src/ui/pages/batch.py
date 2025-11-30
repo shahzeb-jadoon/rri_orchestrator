@@ -51,8 +51,8 @@ async def batch_create_page(request: Request):
             async def handle_upload(e):
                 """Handle CSV file upload and parsing."""
                 try:
-                    # Read file content - e.content is a BufferedReader
-                    file_content = e.content.read().decode('utf-8')
+                    # Read file content using NiceGUI's FileUpload.text() method
+                    file_content = await e.file.text()
                     
                     # Quick validation
                     validation = validate_csv_format(file_content)
