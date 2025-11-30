@@ -1,7 +1,7 @@
 """
-Onboarding page for first-time users.
+New user onboarding.
 
-Collects display name and creates user account with appropriate role.
+Collect display name, create account, wait for approval if needed.
 """
 
 from nicegui import ui, app
@@ -14,19 +14,40 @@ logger = logging.getLogger(__name__)
 
 @ui.page('/onboarding')
 async def onboarding_page():
-    """First-time user setup page."""
+    """New user setup."""
     
-    # Get email from browser storage (set by middleware)
-    email = app.storage.browser.get('user_email')
+    # Get email from middleware
+    email = app.storage.user.get('user_email')
     
     if not email:
         ui.label('Error: No email found. Please try logging in again.').classes('text-negative')
         return
     
-    # Check if user already exists (shouldn't happen, but just in case)
+    # Check if user already exists
     existing = await User.get_or_none(email=email)
     if existing:
-        logger.info(f"User {email} already exists, redirecting to experiments")
+        if not existing.is_approved:
+            # Show waiting for approval message
+            with ui.column().classes('w-full max-w-md mx-auto mt-20 gap-6 p-6'):
+                ui.label('⏳ Waiting for Approval').classes('text-h4 text-center')
+                ui.label(f'Email: {email}').classes('text-subtitle1 text-grey-7 text-center')
+                ui.separator()
+                ui.label('Your account is pending administrator approval.').classes('text-center')
+                ui.label('Please contact your research group admin to approve your access.').classes('text-caption text-grey-6 text-center mt-2')
+            return
+        
+        if not existing.is_active:
+            # Show deactivated message
+            with ui.column().classes('w-full max-w-md mx-auto mt-20 gap-6 p-6'):
+                ui.label('🚫 Account Deactivated').classes('text-h4 text-center text-negative')
+                ui.label(f'Email: {email}').classes('text-subtitle1 text-grey-7 text-center')
+                ui.separator()
+                ui.label('Your account has been deactivated.').classes('text-center')
+                ui.label('Please contact your administrator for more information.').classes('text-caption text-grey-6 text-center mt-2')
+            return
+        
+        # User exists and is approved/active - redirect
+        logger.info(f"User {email} already exists and approved, redirecting")
         ui.navigate.to('/experiments')
         return
     
@@ -59,9 +80,10 @@ async def onboarding_page():
                 ui.notify('Please enter a valid name (at least 2 characters)', type='negative')
                 return
             
-            # Determine role: first user becomes admin
+            # Determine role and approval: first user becomes admin and auto-approved
             user_count = await User.all().count()
-            role = 'admin' if user_count == 0 else 'researcher'
+            is_first_user = user_count == 0
+            role = 'admin' if is_first_user else 'researcher'
             
             try:
                 # Create user
@@ -69,37 +91,44 @@ async def onboarding_page():
                     email=email,
                     display_name=display_name_input.value.strip(),
                     role=role,
+                    is_approved=is_first_user,  # Auto-approve first user (admin)
+                    approved_at=datetime.now() if is_first_user else None,
                     last_login=datetime.now()
                 )
                 
-                logger.info(f"Created new user: {user.display_name} ({user.email}) with role={role}")
+                logger.info(f"Created new user: {user.display_name} ({user.email}) with role={role}, approved={is_first_user}")
                 
-                # Update browser storage
-                app.storage.browser['current_user'] = {
-                    'id': user.id,
-                    'email': user.email,
-                    'display_name': user.display_name,
-                    'role': user.role,
-                    'is_admin': user.is_admin
-                }
-                
-                # Show welcome message
-                if role == 'admin':
+                if is_first_user:
+                    # Update user storage for immediate access
+                    app.storage.user['current_user'] = {
+                        'id': user.id,
+                        'email': user.email,
+                        'display_name': user.display_name,
+                        'role': user.role,
+                        'is_admin': user.is_admin
+                    }
+                    
+                    # Show welcome message
                     ui.notify(
                         f'Welcome, {user.display_name}! You are the first user and have been made an administrator.',
                         type='positive',
                         position='top',
                         timeout=5000
                     )
+                    
+                    # Redirect to experiments
+                    ui.navigate.to('/experiments')
                 else:
+                    # Show pending approval message
                     ui.notify(
-                        f'Welcome, {user.display_name}!',
-                        type='positive',
-                        position='top'
+                        'Account created! Waiting for admin approval...',
+                        type='info',
+                        position='top',
+                        timeout=3000
                     )
-                
-                # Redirect to experiments
-                ui.navigate.to('/experiments')
+                    
+                    # Reload page to show waiting message
+                    ui.navigate.reload()
                 
             except Exception as e:
                 logger.error(f"Error creating user: {e}")

@@ -7,11 +7,7 @@ from src.database import get_database_status
 
 
 def create_navbar():
-    """
-    Create the application navigation bar.
-    
-    Displays on all pages for consistent navigation.
-    """
+    """Create navigation bar with links and DB status."""
     with ui.header().classes('items-center justify-between'):
         with ui.row().classes('items-center'):
             ui.label('🤖 RRI Orchestrator').classes('text-h5 text-white')
@@ -21,6 +17,12 @@ def create_navbar():
             ui.link('Robots', '/robots').classes('text-white')
             ui.link('Experiments', '/experiments').classes('text-white')
             ui.link('Create Batch', '/batch/create').classes('text-white font-bold')
+            
+            # Admin-only link
+            from nicegui import app
+            current_user = app.storage.user.get('current_user')
+            if current_user and current_user.get('is_admin'):
+                ui.link('👑 Admin', '/admin/users').classes('text-white bg-red-600 px-2 py-1 rounded')
             
             # Database status indicator
             async def show_status():

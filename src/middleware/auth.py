@@ -1,5 +1,5 @@
 """
-Authentication middleware for Cloudflare Zero Trust integration.
+Cloudflare Zero Trust authentication.
 """
 
 from datetime import datetime
@@ -12,10 +12,9 @@ logger = logging.getLogger(__name__)
 
 async def get_current_user(request):
     """
-    Extract user from Cloudflare header and get/create user record.
+    Get user from Cloudflare header.
     
-    Returns:
-        User object if authenticated, None if new user needs onboarding
+    Returns User if approved/active, None if pending or new.
     """
     email = request.headers.get('Cf-Access-Authenticated-User-Email')
     
@@ -30,6 +29,15 @@ async def get_current_user(request):
     user = await User.get_or_none(email=email)
     
     if user:
+        # Check if user is approved and active
+        if not user.is_approved:
+            logger.warning(f"User {user.email} not approved yet")
+            return None
+        
+        if not user.is_active:
+            logger.warning(f"User {user.email} has been deactivated")
+            return None
+        
         user.last_login = datetime.now()
         await user.save(update_fields=['last_login'])
         logger.info(f"User {user.display_name} logged in")
@@ -41,9 +49,7 @@ async def get_current_user(request):
 
 @app.middleware('http')
 async def auth_middleware(request, call_next):
-    """
-    Attach user information to request and browser storage.
-    """
+    """Attach user to request state."""
     # Skip static files
     if request.url.path.startswith('/static') or request.url.path.startswith('/_nicegui'):
         return await call_next(request)
@@ -53,22 +59,32 @@ async def auth_middleware(request, call_next):
     if not email:
         email = request.headers.get('X-Dev-Email', 'dev@rit.edu')
     
-    # Attach to request state
+    # Attach to request state (accessible in page functions)
     request.state.user = user
     request.state.user_email = email
     
-    # Store in browser storage
+    # Check approval status for non-onboarding pages
+    if not user and email and not request.url.path.startswith('/onboarding'):
+        # Check if user exists but is not approved
+        pending_user = await User.get_or_none(email=email)
+        if pending_user and not pending_user.is_approved:
+            request.state.pending_approval = True
+        elif pending_user and not pending_user.is_active:
+            request.state.deactivated = True
+    
+    # Store in user storage (request-scoped, safe in middleware)
     if user:
-        app.storage.browser['current_user'] = {
+        app.storage.user['current_user'] = {
             'id': user.id,
             'email': user.email,
             'display_name': user.display_name,
             'role': user.role,
             'is_admin': user.is_admin
         }
+        app.storage.user['user_email'] = email
     else:
-        app.storage.browser['current_user'] = None
-        app.storage.browser['user_email'] = email
+        app.storage.user['current_user'] = None
+        app.storage.user['user_email'] = email
     
     response = await call_next(request)
     return response

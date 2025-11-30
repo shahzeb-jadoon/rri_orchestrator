@@ -1,8 +1,7 @@
 """
-Database models for the RRI Orchestrator.
+Database models using Tortoise ORM.
 
-This module defines all data structures using Tortoise ORM, which provides
-async database operations with PostgreSQL.
+Defines users, experiments, batches, robots, messages, and queues.
 """
 
 from datetime import datetime
@@ -14,19 +13,40 @@ from tortoise.models import Model
 
 class User(Model):
     """
-    User accounts for accessing the orchestrator.
+    User accounts with Cloudflare Zero Trust auth.
     
-    Authentication is handled via Cloudflare Zero Trust (@rit.edu emails).
-    Users are auto-created on first login and prompted for display name.
+    First user becomes admin. New users need admin approval.
     """
     
     id = fields.IntField(primary_key=True)
     email = fields.CharField(max_length=255, unique=True, db_index=True)
-    display_name = fields.CharField(max_length=100)  # User-provided friendly name
-    role = fields.CharField(max_length=20, default='researcher')  # 'admin' or 'researcher'
+    display_name = fields.CharField(max_length=100)
+    role = fields.CharField(max_length=20, default='researcher')  # admin or researcher
+    
+    # Access control
     is_active = fields.BooleanField(default=True)
+    is_approved = fields.BooleanField(default=False)
+    approved_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="approved_users",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    approved_at = fields.DatetimeField(null=True)
+    
+    # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
     last_login = fields.DatetimeField(auto_now=False, null=True)
+    
+    # Soft delete (preserve data when user leaves)
+    deactivated_at = fields.DatetimeField(null=True)
+    deactivated_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="deactivated_users",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    deactivation_reason = fields.TextField(null=True)
     
     # Relationships
     experiments: fields.ReverseRelation["Experiment"]
@@ -57,8 +77,11 @@ class Experiment(Model):
     created_by = fields.ForeignKeyField(
         "models.User",
         related_name="experiments",
-        on_delete=fields.CASCADE
+        on_delete=fields.SET_NULL,
+        null=True
     )
+    created_by_email = fields.CharField(max_length=255, null=True)
+    created_by_name = fields.CharField(max_length=100, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     is_active = fields.BooleanField(default=True)
@@ -97,7 +120,7 @@ class Experiment(Model):
         on_delete=fields.SET_NULL,
         null=True
     )
-    batch_index = fields.IntField(null=True)  # Position within batch
+    batch_index = fields.IntField(null=True)
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
@@ -243,8 +266,11 @@ class ExperimentBatch(Model):
     created_by = fields.ForeignKeyField(
         "models.User",
         related_name="batches",
-        on_delete=fields.CASCADE
+        on_delete=fields.SET_NULL,
+        null=True
     )
+    created_by_email = fields.CharField(max_length=255, null=True)
+    created_by_name = fields.CharField(max_length=100, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     
     # Batch configuration
@@ -289,12 +315,12 @@ class ExperimentQueue(Model):
         "models.ExperimentBatch",
         related_name="queue_entries",
         on_delete=fields.CASCADE,
-        null=True  # Null for manual experiments
+        null=True
     )
     
     # Queue management
-    status = fields.CharField(max_length=20, default='queued')  # queued, running, completed, failed
-    priority = fields.IntField(default=0)  # Higher = runs first
+    status = fields.CharField(max_length=20, default='queued')
+    priority = fields.IntField(default=0)
     added_at = fields.DatetimeField(auto_now_add=True)
     started_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)

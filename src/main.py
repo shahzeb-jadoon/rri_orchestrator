@@ -14,7 +14,7 @@ from src.database import close_database, get_database_status, init_database
 from src.utils import logger
 
 # Import UI pages to register routes
-from src.ui.pages import robots, experiments, onboarding, batch  # noqa: F401
+from src.ui.pages import robots, experiments, onboarding, batch, admin  # noqa: F401
 
 # Import middleware (auto-registers via decorator)
 from src.middleware import auth  # noqa: F401

@@ -1,8 +1,7 @@
 """
-Batch experiment creation page.
+Batch experiment creation from CSV upload.
 
-This page allows researchers to upload CSV files, preview parsed experiments,
-configure batch settings, and create experiment batches.
+Upload CSV, preview experiments, configure settings, create batch.
 """
 
 from nicegui import ui, app, Client
@@ -25,11 +24,11 @@ upload_session = {
 
 @ui.page('/batch/create')
 async def batch_create_page(request: Request):
-    """Batch creation page with CSV upload and preview."""
+    """Create batch from CSV with preview."""
     
     create_navbar()
     
-    # Get current user from request state (set by middleware)
+    # Get current user from middleware
     user = getattr(request.state, 'user', None)
     user_email = getattr(request.state, 'user_email', None)
     

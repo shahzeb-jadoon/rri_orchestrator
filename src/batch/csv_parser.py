@@ -1,8 +1,7 @@
 """
-CSV parser for batch experiment creation.
+Parse CSV files for batch experiments.
 
-This module handles parsing CSV files containing experiment prompts and configurations,
-validating the format, and converting them into structured data for batch creation.
+Supports header or simple format, validates, converts to structured data.
 """
 
 import csv
@@ -31,23 +30,10 @@ class ParseResult:
 
 def parse_csv(file_content: str, has_header: bool = True) -> ParseResult:
     """
-    Parse CSV file content into experiments.
+    Parse CSV into experiments.
     
-    Expected CSV format:
-    prompt,description,max_turns
-    "What is AI?","Basic AI question",10
-    "Explain robots","Robotics explanation",15
-    
-    Or minimal format (just prompts):
-    What is AI?
-    Explain robots
-    
-    Args:
-        file_content: String content of CSV file
-        has_header: Whether first row is a header
-        
-    Returns:
-        ParseResult with experiments or errors
+    Format: prompt,description,max_turns or just prompts (one per line).
+    Returns ParseResult with experiments and any errors.
     """
     experiments = []
     errors = []
@@ -134,12 +120,7 @@ def parse_csv(file_content: str, has_header: bool = True) -> ParseResult:
 
 
 def validate_csv_format(file_content: str) -> Dict[str, any]:
-    """
-    Quick validation of CSV format without full parsing.
-    
-    Returns:
-        Dictionary with 'valid' boolean and 'message' string
-    """
+    """Quick CSV validation. Returns dict with 'valid' and 'message'."""
     if not file_content or not file_content.strip():
         return {"valid": False, "message": "File is empty"}
     

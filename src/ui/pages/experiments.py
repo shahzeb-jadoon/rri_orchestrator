@@ -1,7 +1,7 @@
 """
-Experiment management and chat interface pages.
+Experiment management and chat interface.
 
-Provides setup for robot-robot experiments and real-time chat display.
+Setup and monitor robot-robot experiments.
 """
 
 from nicegui import ui, app
@@ -70,9 +70,7 @@ async def export_all_experiments():
 
 @ui.page('/experiments')
 async def experiments_list_page():
-    """
-    List all experiments with status and actions.
-    """
+    """List all experiments."""
     create_navbar()
     
     # Header with export button
