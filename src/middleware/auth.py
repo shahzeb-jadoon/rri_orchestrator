@@ -63,14 +63,14 @@ async def auth_middleware(request, call_next):
     request.state.user = user
     request.state.user_email = email
     
-    # Check approval status for non-onboarding pages
+    # Redirect to onboarding if user needs setup or approval
     if not user and email and not request.url.path.startswith('/onboarding'):
-        # Check if user exists but is not approved
-        pending_user = await User.get_or_none(email=email)
-        if pending_user and not pending_user.is_approved:
-            request.state.pending_approval = True
-        elif pending_user and not pending_user.is_active:
-            request.state.deactivated = True
+        # Check if user exists but needs attention
+        existing_user = await User.get_or_none(email=email)
+        if existing_user or not existing_user:
+            # Either pending approval, deactivated, or brand new - send to onboarding
+            from starlette.responses import RedirectResponse
+            return RedirectResponse(url='/onboarding', status_code=303)
     
     # Store in user storage (request-scoped, safe in middleware)
     if user:

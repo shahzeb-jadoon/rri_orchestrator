@@ -16,12 +16,10 @@ from src.ui.components import create_navbar
 async def admin_users_page(request: Request):
     """Admin-only user management."""
     
-    # Get user from request
-    user = getattr(request.state, 'user', None)
-    
-    create_navbar(user)
+    create_navbar()
     
     # Verify admin access
+    user = getattr(request.state, 'user', None)
     
     if not user or not user.is_admin:
         ui.label('🚫 Access Denied').classes('text-h4 text-negative')
