@@ -222,15 +222,16 @@ class BatchExecutor:
             robot_b_provider = experiment.robot_b_profile.ai_provider
             
             if robot_a_provider == 'openai' or robot_b_provider == 'openai':
-                if not settings.OPENAI_API_KEY:
+                if not settings.openai_api_key:
                     logger.error(f"OpenAI API key not configured for experiment {experiment.id}")
                     return False
             
             if robot_a_provider == 'gemini' or robot_b_provider == 'gemini':
-                if not settings.GEMINI_API_KEY:
+                if not settings.gemini_api_key:
                     logger.error(f"Gemini API key not configured for experiment {experiment.id}")
                     return False
             
+            logger.info(f"Pre-flight check passed for experiment {experiment.id}")
             return True
             
         except Exception as e:
