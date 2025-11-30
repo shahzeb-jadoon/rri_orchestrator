@@ -88,7 +88,7 @@ async def experiments_list_page():
     ui.space()
     
     # Load experiments
-    experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile')
+    experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
     
     async def delete_experiment(exp_id: int):
         await Experiment.filter(id=exp_id).delete()
@@ -101,7 +101,41 @@ async def experiments_list_page():
         for exp in experiments:
             with ui.card().classes('w-full'):
                 with ui.row().classes('w-full items-center justify-between'):
-                    ui.label(exp.name).classes('text-h5')
+                    with ui.row().classes('items-center gap-2'):
+                        ui.label(exp.name).classes('text-h5')
+                        
+                        # Batch indicator
+                        if exp.batch:
+                            ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
+                        
+                        # Check completion status for batch experiments
+                        if exp.batch:
+                            msg_count = await ChatMessage.filter(experiment=exp).count()
+                            expected_messages = exp.max_turns * 2
+                            
+                            if msg_count >= expected_messages:
+                                ui.badge('✓ Complete', color='green')
+                            elif msg_count > 0:
+                                # Check queue status for more detail
+                                from src.database import ExperimentQueue
+                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                                if queue_entry:
+                                    if queue_entry.status == 'failed':
+                                        ui.badge(f'⚠ Failed ({msg_count}/{expected_messages})', color='red').props('outline')
+                                        ui.icon('info', size='sm').classes('text-orange').tooltip(
+                                            f'Stopped at {msg_count} messages due to error. Expected {expected_messages}.'
+                                        )
+                                    elif queue_entry.status == 'running':
+                                        ui.badge(f'🔄 Running ({msg_count}/{expected_messages})', color='orange')
+                                    else:
+                                        ui.badge(f'Partial ({msg_count}/{expected_messages})', color='orange').props('outline')
+                            else:
+                                # No messages yet
+                                from src.database import ExperimentQueue
+                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                                if queue_entry and queue_entry.status == 'queued':
+                                    ui.badge('⏳ Queued', color='grey').props('outline')
+                    
                     with ui.row().classes('gap-2'):
                         ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
                         ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
@@ -115,7 +149,11 @@ async def experiments_list_page():
                 
                 # Stats
                 msg_count = await ChatMessage.filter(experiment=exp).count()
-                ui.label(f'{msg_count} messages').classes('text-caption')
+                if exp.batch:
+                    expected = exp.max_turns * 2
+                    ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
+                else:
+                    ui.label(f'{msg_count} messages').classes('text-caption')
 
 
 @ui.page('/experiments/create')
