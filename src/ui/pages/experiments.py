@@ -6,6 +6,7 @@ Setup and monitor robot-robot experiments.
 
 from nicegui import ui, app
 import asyncio
+from datetime import datetime
 from starlette.requests import Request
 from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
@@ -188,32 +189,26 @@ async def experiments_list_page():
     
     ui.space()
     
-    # Load experiments (filter out deleted unless admin)
-    if user.is_admin:
-        # Admins see all experiments (including deleted)
-        experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
-    else:
-        # Regular users only see active experiments
-        experiments = await Experiment.filter(is_active=True).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
+    # Load only non-deleted experiments
+    experiments = await Experiment.filter(
+        deleted_at__isnull=True
+    ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
     
     async def delete_experiment(exp_id: int):
-        """Delete experiment (soft delete with permission check)."""
-        exp = await Experiment.get_or_none(id=exp_id).prefetch_related('created_by')
+        """Soft delete experiment with permission check."""
+        exp = await Experiment.get(id=exp_id).prefetch_related('created_by')
         
-        if not exp:
-            ui.notify('Experiment not found', type='negative')
+        # Permission check: must be creator or admin
+        if not user.is_admin and exp.created_by_id != user.id:
+            ui.notify('Permission denied: You can only delete your own experiments', type='negative')
             return
         
-        # Permission check: only owner or admin can delete
-        if exp.created_by.id != user.id and not user.is_admin:
-            ui.notify('⛔ You can only delete your own experiments', type='negative')
-            return
-        
-        # Soft delete: just deactivate
-        exp.is_active = False
+        # Soft delete
+        exp.deleted_at = datetime.now()
+        exp.deleted_by_id = user.id
         await exp.save()
         
-        ui.notify(f'Experiment "{exp.name}" deleted', type='positive')
+        ui.notify('Experiment moved to trash', type='positive')
         ui.navigate.to('/experiments')
 
     if not experiments:
@@ -228,6 +223,10 @@ async def experiments_list_page():
                         # Batch indicator
                         if exp.batch:
                             ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
+                        
+                        # Creator badge
+                        creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
+                        ui.badge(f'By: {creator_name}', color='grey').props('outline')
                         
                         # Check completion status for batch experiments
                         if exp.batch:
@@ -267,24 +266,9 @@ async def experiments_list_page():
                         ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
                         ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
                         
-                        # Show delete button only if user owns it or is admin
-                        if exp.created_by.id == user.id or user.is_admin:
-                            if exp.is_active:
-                                ui.button(icon='delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=red')
-                            elif user.is_admin:
-                                # Admin can restore deleted experiments
-                                async def restore_experiment(exp_id: int):
-                                    exp_to_restore = await Experiment.get(id=exp_id)
-                                    exp_to_restore.is_active = True
-                                    await exp_to_restore.save()
-                                    ui.notify(f'Experiment "{exp_to_restore.name}" restored', type='positive')
-                                    ui.navigate.to('/experiments')
-                                
-                                ui.button(icon='restore', on_click=lambda e=exp: restore_experiment(e.id)).props('flat size=sm color=green').tooltip('Restore deleted experiment')
-                        
-                        # Show "DELETED" badge for admins viewing inactive experiments
-                        if not exp.is_active and user.is_admin:
-                            ui.badge('DELETED', color='red')
+                        # Only show delete if user has permission (admin or creator)
+                        if user.is_admin or exp.created_by_id == user.id:
+                            ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
                 
                 ui.label(
                     f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
