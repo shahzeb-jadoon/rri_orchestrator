@@ -214,8 +214,8 @@ class BatchExecutor:
                 return False
             
             # Verify API keys are configured
-            from src.config import get_settings
-            settings = get_settings()
+            from src.config import Settings
+            settings = Settings()
             
             # Check based on robot providers
             robot_a_provider = experiment.robot_a_profile.ai_provider
