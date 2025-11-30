@@ -20,6 +20,7 @@ def create_navbar():
             ui.link('Home', '/').classes('text-white')
             ui.link('Robots', '/robots').classes('text-white')
             ui.link('Experiments', '/experiments').classes('text-white')
+            ui.link('Create Batch', '/batch/create').classes('text-white font-bold')
             
             # Database status indicator
             async def show_status():

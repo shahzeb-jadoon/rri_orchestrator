@@ -32,7 +32,6 @@ async def batch_create_page(request: Request):
     
     if not user:
         ui.label('Please log in to create batches').classes('text-negative')
-        ui.label(f'Debug: Email={user_email}, User={user}').classes('text-caption')
         return
     
     # Page header
