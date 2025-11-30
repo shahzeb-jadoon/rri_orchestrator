@@ -67,3 +67,6 @@ htmlcov/
 # uv specific
 .uv/
 uv.lock
+
+# NiceGUI session storage
+.nicegui/

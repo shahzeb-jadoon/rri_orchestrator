@@ -5,7 +5,8 @@ This page allows researchers to upload CSV files, preview parsed experiments,
 configure batch settings, and create experiment batches.
 """
 
-from nicegui import ui, app
+from nicegui import ui, app, Client
+from starlette.requests import Request
 from datetime import datetime
 import asyncio
 
@@ -22,15 +23,16 @@ upload_session = {
 
 
 @ui.page('/batch/create')
-async def batch_create_page():
+async def batch_create_page(request: Request):
     """Batch creation page with CSV upload and preview."""
     
-    # Get current user
-    user_email = app.storage.user.get('user_email')
-    user = await User.get_or_none(email=user_email)
+    # Get current user from request state (set by middleware)
+    user = getattr(request.state, 'user', None)
+    user_email = getattr(request.state, 'user_email', None)
     
     if not user:
         ui.label('Please log in to create batches').classes('text-negative')
+        ui.label(f'Debug: Email={user_email}, User={user}').classes('text-caption')
         return
     
     # Page header
