@@ -6,6 +6,8 @@ from src.database.models import (
     ChatMessage,
     ConversationSummary,
     Experiment,
+    ExperimentBatch,
+    ExperimentQueue,
     RobotProfile,
     User,
 )

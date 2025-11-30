@@ -84,9 +84,20 @@ class Experiment(Model):
         null=True
     )
 
-    # Conversation settings
+    # Experiment settings
     initial_prompt = fields.TextField(null=True)
+    robot_a_profile_name = fields.CharField(max_length=100, null=True)
+    robot_b_profile_name = fields.CharField(max_length=100, null=True)
     max_turns = fields.IntField(default=10)
+    
+    # Batch automation
+    batch = fields.ForeignKeyField(
+        "models.ExperimentBatch",
+        related_name="experiments",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    batch_index = fields.IntField(null=True)  # Position within batch
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
@@ -216,3 +227,85 @@ class RobotProfile(Model):
     
     def __str__(self) -> str:
         return f"RobotProfile({self.name})"
+
+
+class ExperimentBatch(Model):
+    """
+    A collection of experiments running as a batch.
+    
+    Batches allow researchers to queue multiple experiments with similar
+    configurations, enabling automated testing of different prompts or scenarios.
+    """
+    
+    id = fields.IntField(primary_key=True)
+    name = fields.CharField(max_length=200)
+    description = fields.TextField(null=True)
+    created_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="batches",
+        on_delete=fields.CASCADE
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    
+    # Batch configuration
+    total_experiments = fields.IntField(default=0)
+    max_concurrent = fields.IntField(default=5)  # Max experiments running at once
+    
+    # Status tracking
+    status = fields.CharField(max_length=20, default='pending')  # pending, running, paused, completed, failed
+    started_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+    
+    # Progress counters
+    experiments_completed = fields.IntField(default=0)
+    experiments_failed = fields.IntField(default=0)
+    
+    # Relationships
+    experiments: fields.ReverseRelation["Experiment"]
+    
+    class Meta:
+        table = "experiment_batches"
+        ordering = ["-created_at"]
+    
+    def __str__(self) -> str:
+        return f"Batch({self.name}, {self.experiments_completed}/{self.total_experiments})"
+
+
+class ExperimentQueue(Model):
+    """
+    Queue for managing experiment execution order.
+    
+    Experiments are added to the queue and processed based on priority
+    and creation time. Manual experiments can jump the queue.
+    """
+    
+    id = fields.IntField(primary_key=True)
+    experiment = fields.ForeignKeyField(
+        "models.Experiment",
+        related_name="queue_entries",
+        on_delete=fields.CASCADE
+    )
+    batch = fields.ForeignKeyField(
+        "models.ExperimentBatch",
+        related_name="queue_entries",
+        on_delete=fields.CASCADE,
+        null=True  # Null for manual experiments
+    )
+    
+    # Queue management
+    status = fields.CharField(max_length=20, default='queued')  # queued, running, completed, failed
+    priority = fields.IntField(default=0)  # Higher = runs first
+    added_at = fields.DatetimeField(auto_now_add=True)
+    started_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+    
+    # Error tracking
+    error_message = fields.TextField(null=True)
+    retry_count = fields.IntField(default=0)
+    
+    class Meta:
+        table = "experiment_queue"
+        ordering = ["-priority", "added_at"]  # Higher priority first, then FIFO
+    
+    def __str__(self) -> str:
+        return f"QueueEntry({self.experiment.name}, {self.status})"
