@@ -54,6 +54,45 @@ async def admin_users_page(request: Request):
             ui.label('Deactivated').classes('text-caption text-grey-7')
             ui.label(str(len(deactivated_users))).classes('text-h4 font-bold text-grey')
     
+    # Reactivation requests (priority)
+    reactivation_requests = [u for u in deactivated_users if u.reactivation_requested_at]
+    
+    if reactivation_requests:
+        ui.label('✉️ Reactivation Requests').classes('text-h5 font-bold mt-6 mb-2')
+        
+        for req_user in reactivation_requests:
+            exp_count = await Experiment.filter(created_by=req_user).count()
+            
+            with ui.card().classes('w-full p-4 bg-blue-50'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    with ui.column().classes('gap-1'):
+                        ui.label(req_user.display_name).classes('text-h6 font-bold')
+                        ui.label(req_user.email).classes('text-caption text-grey-7')
+                        ui.label(f'Requested: {req_user.reactivation_requested_at.strftime("%b %d, %Y %I:%M %p")}').classes('text-caption text-grey-6')
+                        ui.label(f'{exp_count} experiments preserved').classes('text-caption')
+                        if req_user.deactivation_reason:
+                            ui.label(f'Deactivation reason: {req_user.deactivation_reason}').classes('text-caption text-grey-6 italic mt-1')
+                    
+                    with ui.row().classes('gap-2'):
+                        async def approve_reactivation(u=req_user):
+                            u.is_active = True
+                            u.deactivated_at = None
+                            u.deactivated_by = None
+                            u.deactivation_reason = None
+                            u.reactivation_requested_at = None
+                            await u.save()
+                            ui.notify(f'✓ Reactivated {u.display_name}', type='positive')
+                            ui.navigate.reload()
+                        
+                        async def deny_reactivation(u=req_user):
+                            u.reactivation_requested_at = None
+                            await u.save()
+                            ui.notify(f'✗ Denied reactivation for {u.display_name}', type='warning')
+                            ui.navigate.reload()
+                        
+                        ui.button('✓ Approve', on_click=approve_reactivation).props('color=positive')
+                        ui.button('✗ Deny', on_click=deny_reactivation).props('flat color=negative')
+    
     # Pending approvals (priority)
     if pending_users:
         ui.label('⏳ Pending Approval').classes('text-h5 font-bold mt-6 mb-2')

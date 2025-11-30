@@ -28,28 +28,25 @@ class User(Model):
     is_approved = fields.BooleanField(default=False)
     approved_by = fields.ForeignKeyField(
         "models.User",
-        related_name="approved_users",
-        on_delete=fields.SET_NULL,
-        null=True
-    )
+    approved_by = fields.ForeignKeyField('models.User', related_name='users_approved', null=True, on_delete=fields.SET_NULL)
     approved_at = fields.DatetimeField(null=True)
     
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
     last_login = fields.DatetimeField(auto_now=False, null=True)
     
-    # Soft delete (preserve data when user leaves)
+    # Deactivation tracking
     deactivated_at = fields.DatetimeField(null=True)
-    deactivated_by = fields.ForeignKeyField(
-        "models.User",
-        related_name="deactivated_users",
-        on_delete=fields.SET_NULL,
-        null=True
-    )
+    deactivated_by = fields.ForeignKeyField('models.User', related_name='users_deactivated', null=True, on_delete=fields.SET_NULL)
     deactivation_reason = fields.TextField(null=True)
+    
+    # Reactivation request tracking
+    reactivation_requested_at = fields.DatetimeField(null=True)
     
     # Relationships
     experiments: fields.ReverseRelation["Experiment"]
+    batches: fields.ReverseRelation["ExperimentBatch"]
+    robot_profiles: fields.ReverseRelation["RobotProfile"]
     
     class Meta:
         table = "users"

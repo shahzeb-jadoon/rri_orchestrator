@@ -37,13 +37,33 @@ async def onboarding_page():
             return
         
         if not existing.is_active:
-            # Show deactivated message
+            # Deactivated user - show message and allow reactivation request
             with ui.column().classes('w-full max-w-md mx-auto mt-20 gap-6 p-6'):
                 ui.label('🚫 Account Deactivated').classes('text-h4 text-center text-negative')
                 ui.label(f'Email: {email}').classes('text-subtitle1 text-grey-7 text-center')
                 ui.separator()
-                ui.label('Your account has been deactivated.').classes('text-center')
-                ui.label('Please contact your administrator for more information.').classes('text-caption text-grey-6 text-center mt-2')
+                
+                if existing.reactivation_requested_at:
+                    # Already requested reactivation
+                    ui.label('✉️ Reactivation Request Pending').classes('text-center font-bold')
+                    ui.label(f'Requested on: {existing.reactivation_requested_at.strftime("%b %d, %Y %I:%M %p")}').classes('text-caption text-grey-6 text-center mt-2')
+                    ui.label('Your administrator has been notified. Please wait for approval.').classes('text-caption text-grey-6 text-center mt-2')
+                else:
+                    # Can request reactivation
+                    ui.label('Your account has been deactivated.').classes('text-center')
+                    if existing.deactivation_reason:
+                        ui.label(f'Reason: {existing.deactivation_reason}').classes('text-caption text-grey-6 text-center italic mt-2')
+                    
+                    ui.label('You can request reactivation below:').classes('text-caption text-grey-6 text-center mt-4')
+                    
+                    async def request_reactivation():
+                        from datetime import datetime
+                        existing.reactivation_requested_at = datetime.now()
+                        await existing.save()
+                        ui.notify('✓ Reactivation request sent to administrator', type='positive')
+                        ui.navigate.reload()
+                    
+                    ui.button('Request Reactivation', on_click=request_reactivation).props('color=primary').classes('mt-4')
             return
         
         # User exists and is approved/active - redirect
