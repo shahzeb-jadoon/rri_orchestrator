@@ -24,10 +24,18 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv/
 venv/
 ENV/
 env/
-.venv
+
+# Database backups
+backups/
+*.sql
+
+# Assessment documents
+COMPREHENSIVE_ASSESSMENT.md
+QUICK_FIX_GUIDE.md
 
 # IDE specific files
 .vscode/
