@@ -175,10 +175,12 @@ async def experiments_list_page():
     """List all experiments."""
     create_navbar()
     
-    # Header with export button
-    with ui.row().classes('w-full items-center justify-between mb-4'):
-        ui.label('Experiments').classes('text-h3')
-        ui.button('📥 Export All', on_click=export_all_experiments).props('flat color=primary')
+    # Header with export and deleted link
+    with ui.row().classes('w-full justify-between items-center'):
+        ui.label('Experiments').classes('text-h4')
+        with ui.row().classes('gap-2'):
+            ui.button('🗑️ Deleted', on_click=lambda: ui.navigate.to('/experiments/deleted')).props('flat color=grey')
+            ui.button('📥 Export All', on_click=export_all_experiments).props('flat color=primary')
     
     ui.label('Manage robot-robot interaction experiments').classes('text-subtitle1 text-grey')
     
