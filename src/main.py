@@ -111,7 +111,8 @@ def main():
         port=settings.port,
         title="RRI Orchestrator",
         reload=settings.is_development,
-        show=False  # Don't auto-open browser
+        show=False,  # Don't auto-open browser
+        storage_secret=settings.secret_key  # Required for app.storage.user
     )
 
 
