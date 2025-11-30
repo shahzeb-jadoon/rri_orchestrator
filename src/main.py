@@ -8,6 +8,7 @@ database connection lifecycle.
 from contextlib import asynccontextmanager
 
 from nicegui import app, ui
+from starlette.requests import Request
 
 from src.config import settings
 from src.database import close_database, get_database_status, init_database
@@ -56,11 +57,20 @@ app.on_shutdown(shutdown)
 
 
 @ui.page("/")
-async def index_page():
+async def index_page(request: Request):
     """
     Main landing page of the application.
     """
     from src.ui.components import create_navbar
+    
+    # Redirect non-approved users to onboarding
+    user = getattr(request.state, 'user', None)
+    email = getattr(request.state, 'user_email', None)
+    
+    if email and not user:
+        # User needs onboarding (new or pending approval)
+        ui.navigate.to('/onboarding')
+        return
     
     create_navbar()
     

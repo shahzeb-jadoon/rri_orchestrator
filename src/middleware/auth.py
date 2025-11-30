@@ -64,13 +64,11 @@ async def auth_middleware(request, call_next):
     request.state.user_email = email
     
     # Redirect to onboarding if user needs setup or approval
-    if not user and email and not request.url.path.startswith('/onboarding'):
-        # Check if user exists but needs attention
-        existing_user = await User.get_or_none(email=email)
-        if existing_user or not existing_user:
-            # Either pending approval, deactivated, or brand new - send to onboarding
-            from starlette.responses import RedirectResponse
-            return RedirectResponse(url='/onboarding', status_code=303)
+    # Skip redirect for root path (/) to allow initial landing
+    if not user and email and not request.url.path.startswith('/onboarding') and request.url.path != '/':
+        # User needs onboarding - send them there
+        from starlette.responses import RedirectResponse
+        return RedirectResponse(url='/onboarding', status_code=303)
     
     # Store in user storage (request-scoped, safe in middleware)
     if user:
