@@ -160,7 +160,7 @@ async def batch_create_page():
                 
                 # Fetch available robot profiles
                 robot_profiles = await RobotProfile.all()
-               profile_options = [f"{profile.name}" for profile in robot_profiles]
+                profile_options = [f"{profile.name}" for profile in robot_profiles]
                 
                 with ui.row().classes('w-full gap-4'):
                     robot_a_select = ui.select(
