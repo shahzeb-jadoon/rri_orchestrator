@@ -40,6 +40,11 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+    
+    # Start batch executor
+    from src.batch import start_executor
+    await start_executor()
+    logger.info("BatchExecutor started")
 
 
 async def shutdown():
@@ -47,6 +52,12 @@ async def shutdown():
     Application shutdown handler.
     """
     logger.info("Shutting down RRI Orchestrator...")
+    
+    # Stop batch executor
+    from src.batch import stop_executor
+    await stop_executor()
+    logger.info("BatchExecutor stopped")
+    
     await close_database()
     logger.info("Database connections closed")
 
