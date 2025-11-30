@@ -160,7 +160,8 @@ class BatchExecutor:
             from src.database import ChatMessage
             existing_messages = await ChatMessage.filter(experiment=experiment).count()
             
-            # max_turns is per robot pair, so total messages = max_turns * 2
+            # max_turns represents conversation exchanges (robot pair turns)
+            # Each exchange = 2 messages (one from each robot)
             max_turns = experiment.max_turns or 10
             total_messages_needed = max_turns * 2
             
@@ -171,9 +172,9 @@ class BatchExecutor:
                 await queue_entry.save()
                 return
             
-            # Calculate how many turns still needed
-            messages_remaining = total_messages_needed - existing_messages
-            turns_to_run = (messages_remaining + 1) // 2  # Ceiling division
+            # Calculate how many individual turns (messages) still needed
+            # Each orchestrate_conversation_turn() call creates ONE message
+            turns_to_run = total_messages_needed - existing_messages
             
             logger.info(f"Experiment {experiment.id} has {existing_messages}/{total_messages_needed} messages, running {turns_to_run} more turns")
             
@@ -183,7 +184,7 @@ class BatchExecutor:
             
             while current_turn < turns_to_run:
                 # Determine which robot speaks based on total message count
-                total_messages_so_far = existing_messages + (current_turn * 2)
+                total_messages_so_far = existing_messages + current_turn
                 initiating_robot = 'robot_a' if total_messages_so_far % 2 == 0 else 'robot_b'
                 
                 # First turn of experiment (no existing messages) gets initial prompt
