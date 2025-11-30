@@ -156,16 +156,38 @@ class BatchExecutor:
             
             logger.info(f"Starting experiment {experiment.id} ({experiment.name})")
             
-            # Run conversation turns until max_turns reached
+            # Check if experiment already has messages (manually run or previously executed)
+            from src.database import ChatMessage
+            existing_messages = await ChatMessage.filter(experiment=experiment).count()
+            
+            # max_turns is per robot pair, so total messages = max_turns * 2
             max_turns = experiment.max_turns or 10
+            total_messages_needed = max_turns * 2
+            
+            if existing_messages >= total_messages_needed:
+                logger.info(f"Experiment {experiment.id} already has {existing_messages} messages (needs {total_messages_needed}), skipping")
+                queue_entry.status = 'completed'
+                queue_entry.completed_at = datetime.now()
+                await queue_entry.save()
+                return
+            
+            # Calculate how many turns still needed
+            messages_remaining = total_messages_needed - existing_messages
+            turns_to_run = (messages_remaining + 1) // 2  # Ceiling division
+            
+            logger.info(f"Experiment {experiment.id} has {existing_messages}/{total_messages_needed} messages, running {turns_to_run} more turns")
+            
+            # Determine starting robot based on existing message count
+            # If even number of messages, robot_a starts; if odd, robot_b starts
             current_turn = 0
             
-            while current_turn < max_turns:
-                # Determine which robot speaks (alternating)
-                initiating_robot = 'robot_a' if current_turn % 2 == 0 else 'robot_b'
+            while current_turn < turns_to_run:
+                # Determine which robot speaks based on total message count
+                total_messages_so_far = existing_messages + (current_turn * 2)
+                initiating_robot = 'robot_a' if total_messages_so_far % 2 == 0 else 'robot_b'
                 
-                # First turn gets initial prompt
-                initial_prompt = experiment.initial_prompt if current_turn == 0 else None
+                # First turn of experiment (no existing messages) gets initial prompt
+                initial_prompt = experiment.initial_prompt if existing_messages == 0 and current_turn == 0 else None
                 
                 try:
                     await orchestrate_conversation_turn(
@@ -189,7 +211,8 @@ class BatchExecutor:
             queue_entry.completed_at = datetime.now()
             await queue_entry.save()
             
-            logger.info(f"Completed experiment {experiment.id} ({experiment.name}): {current_turn} turns")
+            total_messages = await ChatMessage.filter(experiment=experiment).count()
+            logger.info(f"Completed experiment {experiment.id} ({experiment.name}): {total_messages} messages ({total_messages//2} turns)")
             
         except Exception as e:
             logger.error(f"Fatal error running experiment {experiment.id}: {e}", exc_info=True)
