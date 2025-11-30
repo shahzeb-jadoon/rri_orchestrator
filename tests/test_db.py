@@ -69,13 +69,11 @@ async def test_create_experiment_with_user(init_test_db):
 
 @pytest.mark.asyncio
 async def test_create_chat_message(init_test_db):
-    """
-    Test creating a chat message in an experiment.
-    """
+    """Test creating a chat message in an experiment."""
     user = await User.create(
-        username="tester",
-        email="tester@example.com",
-        hashed_password="password"
+        email="tester@rit.edu",
+        display_name="Tester",
+        role="researcher"
     )
     
     experiment = await Experiment.create(
@@ -97,13 +95,11 @@ async def test_create_chat_message(init_test_db):
 
 @pytest.mark.asyncio
 async def test_experiment_message_relationship(init_test_db):
-    """
-    Test that we can query messages through experiment relationship.
-    """
+    """Test querying messages through experiment relationship."""
     user = await User.create(
-        username="tester",
-        email="tester@example.com",
-        hashed_password="password"
+        email="tester@rit.edu",
+        display_name="Tester",
+        role="researcher"
     )
     
     experiment = await Experiment.create(
