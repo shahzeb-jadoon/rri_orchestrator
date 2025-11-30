@@ -20,6 +20,8 @@ from src.database.session import (
 __all__ = [
     "User",
     "Experiment",
+    "ExperimentBatch",
+    "ExperimentQueue",
     "ChatMessage",
     "ConversationSummary",
     "RobotProfile",
@@ -27,3 +29,4 @@ __all__ = [
     "close_database",
     "get_database_status",
 ]
+

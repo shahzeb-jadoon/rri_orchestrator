@@ -48,6 +48,20 @@ async def init_database():
         "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS max_turns INTEGER DEFAULT 10"
     )
     
+    # Batch automation columns (Phase 1.6)
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES experiment_batches(id) ON DELETE SET NULL"
+    )
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS batch_index INTEGER"
+    )
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS robot_a_profile_name VARCHAR(100)"
+    )
+    await conn.execute_query(
+        "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS robot_b_profile_name VARCHAR(100)"
+    )
+    
     logger.info("Database initialized successfully")
 
 
