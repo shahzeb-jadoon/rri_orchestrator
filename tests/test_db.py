@@ -12,52 +12,45 @@ from src.database import User, Experiment, ChatMessage
 
 @pytest.mark.asyncio
 async def test_create_user(init_test_db):
-    """
-    Test creating a new user in the database.
-    """
+    """Test creating a new user."""
     user = await User.create(
-        username="testuser",
-        email="test@example.com",
-        hashed_password="hashed_password_here",
-        full_name="Test User"
+        email="test@rit.edu",
+        display_name="Test User",
+        role="researcher"
     )
     
     assert user.id is not None
-    assert user.username == "testuser"
-    assert user.email == "test@example.com"
+    assert user.email == "test@rit.edu"
+    assert user.display_name == "Test User"
+    assert user.role == "researcher"
     assert user.is_active is True
     assert user.is_admin is False
 
 
 @pytest.mark.asyncio
-async def test_unique_username_constraint(init_test_db):
-    """
-    Test that duplicate usernames are not allowed.
-    """
+async def test_unique_email_constraint(init_test_db):
+    """Test that duplicate emails are not allowed."""
     await User.create(
-        username="duplicate",
-        email="user1@example.com",
-        hashed_password="password1"
+        email="duplicate@rit.edu",
+        display_name="User One",
+        role="researcher"
     )
     
-    # Attempting to create another user with same username should fail
     with pytest.raises(IntegrityError):
         await User.create(
-            username="duplicate",
-            email="user2@example.com",
-            hashed_password="password2"
+            email="duplicate@rit.edu",
+            display_name="User Two",
+            role="researcher"
         )
 
 
 @pytest.mark.asyncio
 async def test_create_experiment_with_user(init_test_db):
-    """
-    Test creating an experiment linked to a user.
-    """
+    """Test creating an experiment linked to a user."""
     user = await User.create(
-        username="researcher",
-        email="researcher@example.com",
-        hashed_password="password"
+        email="researcher@rit.edu",
+        display_name="Researcher One",
+        role="researcher"
     )
     
     experiment = await Experiment.create(

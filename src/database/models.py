@@ -16,18 +16,17 @@ class User(Model):
     """
     User accounts for accessing the orchestrator.
     
-    Stores authentication information and user preferences.
+    Authentication is handled via Cloudflare Zero Trust (@rit.edu emails).
+    Users are auto-created on first login and prompted for display name.
     """
     
     id = fields.IntField(primary_key=True)
-    username = fields.CharField(max_length=50, unique=True, db_index=True)
     email = fields.CharField(max_length=255, unique=True, db_index=True)
-    hashed_password = fields.CharField(max_length=255)
-    full_name = fields.CharField(max_length=100, null=True)
+    display_name = fields.CharField(max_length=100)  # User-provided friendly name
+    role = fields.CharField(max_length=20, default='researcher')  # 'admin' or 'researcher'
     is_active = fields.BooleanField(default=True)
-    is_admin = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
-    last_login = fields.DatetimeField(null=True)
+    last_login = fields.DatetimeField(auto_now=False, null=True)
     
     # Relationships
     experiments: fields.ReverseRelation["Experiment"]
@@ -36,7 +35,12 @@ class User(Model):
         table = "users"
     
     def __str__(self) -> str:
-        return f"User({self.username})"
+        return f"User({self.display_name} <{self.email}>)"
+    
+    @property
+    def is_admin(self) -> bool:
+        """Check if user has admin privileges."""
+        return self.role == 'admin'
 
 
 class Experiment(Model):
