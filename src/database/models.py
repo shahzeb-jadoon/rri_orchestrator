@@ -26,8 +26,6 @@ class User(Model):
     # Access control
     is_active = fields.BooleanField(default=True)
     is_approved = fields.BooleanField(default=False)
-    approved_by = fields.ForeignKeyField(
-        "models.User",
     approved_by = fields.ForeignKeyField('models.User', related_name='users_approved', null=True, on_delete=fields.SET_NULL)
     approved_at = fields.DatetimeField(null=True)
     
