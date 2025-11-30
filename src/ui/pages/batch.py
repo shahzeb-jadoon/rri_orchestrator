@@ -24,13 +24,13 @@ upload_session = {
 
 @ui.page('/batch/create')
 async def batch_create_page(request: Request):
-    """Create batch from CSV with preview."""
+    """Batch creation page with CSV upload and preview."""
     
-    create_navbar()
-    
-    # Get current user from middleware
+    # Get current user from request state (set by middleware)
     user = getattr(request.state, 'user', None)
     user_email = getattr(request.state, 'user_email', None)
+    
+    create_navbar(user)
     
     if not user:
         ui.label('Please log in to create batches').classes('text-negative')
