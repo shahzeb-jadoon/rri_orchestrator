@@ -8,14 +8,17 @@ database connection lifecycle.
 from contextlib import asynccontextmanager
 
 from nicegui import app, ui
+from starlette.requests import Request
 
 from src.config import settings
 from src.database import close_database, get_database_status, init_database
 from src.utils import logger
 
 # Import UI pages to register routes
-from src.ui.pages import robots  # noqa: F401
-from src.ui.pages import experiments  # noqa: F401
+from src.ui.pages import robots, experiments, onboarding, batch, admin  # noqa: F401
+
+# Import middleware (auto-registers via decorator)
+from src.middleware import auth  # noqa: F401
 
 
 async def startup():
@@ -37,6 +40,11 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+    
+    # Start batch executor
+    from src.batch import start_executor
+    await start_executor()
+    logger.info("BatchExecutor started")
 
 
 async def shutdown():
@@ -44,6 +52,12 @@ async def shutdown():
     Application shutdown handler.
     """
     logger.info("Shutting down RRI Orchestrator...")
+    
+    # Stop batch executor
+    from src.batch import stop_executor
+    await stop_executor()
+    logger.info("BatchExecutor stopped")
+    
     await close_database()
     logger.info("Database connections closed")
 
@@ -54,11 +68,20 @@ app.on_shutdown(shutdown)
 
 
 @ui.page("/")
-async def index_page():
+async def index_page(request: Request):
     """
     Main landing page of the application.
     """
     from src.ui.components import create_navbar
+    
+    # Redirect non-approved users to onboarding
+    user = getattr(request.state, 'user', None)
+    email = getattr(request.state, 'user_email', None)
+    
+    if email and not user:
+        # User needs onboarding (new or pending approval)
+        ui.navigate.to('/onboarding')
+        return
     
     create_navbar()
     
@@ -107,7 +130,8 @@ def main():
         port=settings.port,
         title="RRI Orchestrator",
         reload=settings.is_development,
-        show=False  # Don't auto-open browser
+        show=False,  # Don't auto-open browser
+        storage_secret=settings.secret_key  # Required for app.storage.user
     )
 
 

@@ -1,7 +1,7 @@
 """
-Robot profile management pages.
+Robot profile management.
 
-Provides CRUD interface for managing robot profiles with AI configurations.
+Create, edit, and delete robot profiles with AI model configs.
 """
 
 from nicegui import ui
@@ -12,13 +12,11 @@ from src.ui.components import create_navbar
 
 @ui.page('/robots')
 async def robots_list_page():
-    """
-    List all robot profiles with edit/delete actions.
-    """
+    """List all robot profiles."""
     create_navbar()
     
     ui.label('Robot Profiles').classes('text-h4')
-    ui.label('Manage AI-powered robot configurations').classes('text-subtitle1 text-grey')
+    ui.label('Manage robot configurations').classes('text-subtitle1 text-grey')
     
     ui.space()
     
@@ -78,9 +76,7 @@ async def robots_list_page():
 
 @ui.page('/robots/create')
 async def create_robot_page():
-    """
-    Create a new robot profile.
-    """
+    """Create new robot profile."""
     create_navbar()
     
     ui.label('Create Robot Profile').classes('text-h4')

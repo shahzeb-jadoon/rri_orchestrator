@@ -1,8 +1,7 @@
 """
-Database models for the RRI Orchestrator.
+Database models using Tortoise ORM.
 
-This module defines all data structures using Tortoise ORM, which provides
-async database operations with PostgreSQL.
+Defines users, experiments, batches, robots, messages, and queues.
 """
 
 from datetime import datetime
@@ -14,29 +13,49 @@ from tortoise.models import Model
 
 class User(Model):
     """
-    User accounts for accessing the orchestrator.
+    User accounts with Cloudflare Zero Trust auth.
     
-    Stores authentication information and user preferences.
+    First user becomes admin. New users need admin approval.
     """
     
     id = fields.IntField(primary_key=True)
-    username = fields.CharField(max_length=50, unique=True, db_index=True)
     email = fields.CharField(max_length=255, unique=True, db_index=True)
-    hashed_password = fields.CharField(max_length=255)
-    full_name = fields.CharField(max_length=100, null=True)
+    display_name = fields.CharField(max_length=100)
+    role = fields.CharField(max_length=20, default='researcher')  # admin or researcher
+    
+    # Access control
     is_active = fields.BooleanField(default=True)
-    is_admin = fields.BooleanField(default=False)
+    is_approved = fields.BooleanField(default=False)
+    approved_by = fields.ForeignKeyField('models.User', related_name='users_approved', null=True, on_delete=fields.SET_NULL)
+    approved_at = fields.DatetimeField(null=True)
+    
+    # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
-    last_login = fields.DatetimeField(null=True)
+    last_login = fields.DatetimeField(auto_now=False, null=True)
+    
+    # Deactivation tracking
+    deactivated_at = fields.DatetimeField(null=True)
+    deactivated_by = fields.ForeignKeyField('models.User', related_name='users_deactivated', null=True, on_delete=fields.SET_NULL)
+    deactivation_reason = fields.TextField(null=True)
+    
+    # Reactivation request tracking
+    reactivation_requested_at = fields.DatetimeField(null=True)
     
     # Relationships
     experiments: fields.ReverseRelation["Experiment"]
+    batches: fields.ReverseRelation["ExperimentBatch"]
+    robot_profiles: fields.ReverseRelation["RobotProfile"]
     
     class Meta:
         table = "users"
     
     def __str__(self) -> str:
-        return f"User({self.username})"
+        return f"User({self.display_name} <{self.email}>)"
+    
+    @property
+    def is_admin(self) -> bool:
+        """Check if user has admin privileges."""
+        return self.role == 'admin'
 
 
 class Experiment(Model):
@@ -53,8 +72,11 @@ class Experiment(Model):
     created_by = fields.ForeignKeyField(
         "models.User",
         related_name="experiments",
-        on_delete=fields.CASCADE
+        on_delete=fields.SET_NULL,
+        null=True
     )
+    created_by_email = fields.CharField(max_length=255, null=True)
+    created_by_name = fields.CharField(max_length=100, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     is_active = fields.BooleanField(default=True)
@@ -80,9 +102,20 @@ class Experiment(Model):
         null=True
     )
 
-    # Conversation settings
+    # Experiment settings
     initial_prompt = fields.TextField(null=True)
+    robot_a_profile_name = fields.CharField(max_length=100, null=True)
+    robot_b_profile_name = fields.CharField(max_length=100, null=True)
     max_turns = fields.IntField(default=10)
+    
+    # Batch automation
+    batch = fields.ForeignKeyField(
+        "models.ExperimentBatch",
+        related_name="experiments",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    batch_index = fields.IntField(null=True)
     
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
@@ -212,3 +245,88 @@ class RobotProfile(Model):
     
     def __str__(self) -> str:
         return f"RobotProfile({self.name})"
+
+
+class ExperimentBatch(Model):
+    """
+    A collection of experiments running as a batch.
+    
+    Batches allow researchers to queue multiple experiments with similar
+    configurations, enabling automated testing of different prompts or scenarios.
+    """
+    
+    id = fields.IntField(primary_key=True)
+    name = fields.CharField(max_length=200)
+    description = fields.TextField(null=True)
+    created_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="batches",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    created_by_email = fields.CharField(max_length=255, null=True)
+    created_by_name = fields.CharField(max_length=100, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    
+    # Batch configuration
+    total_experiments = fields.IntField(default=0)
+    max_concurrent = fields.IntField(default=5)  # Max experiments running at once
+    
+    # Status tracking
+    status = fields.CharField(max_length=20, default='pending')  # pending, running, paused, completed, failed
+    started_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+    
+    # Progress counters
+    experiments_completed = fields.IntField(default=0)
+    experiments_failed = fields.IntField(default=0)
+    
+    # Relationships
+    experiments: fields.ReverseRelation["Experiment"]
+    
+    class Meta:
+        table = "experiment_batches"
+        ordering = ["-created_at"]
+    
+    def __str__(self) -> str:
+        return f"Batch({self.name}, {self.experiments_completed}/{self.total_experiments})"
+
+
+class ExperimentQueue(Model):
+    """
+    Queue for managing experiment execution order.
+    
+    Experiments are added to the queue and processed based on priority
+    and creation time. Manual experiments can jump the queue.
+    """
+    
+    id = fields.IntField(primary_key=True)
+    experiment = fields.ForeignKeyField(
+        "models.Experiment",
+        related_name="queue_entries",
+        on_delete=fields.CASCADE
+    )
+    batch = fields.ForeignKeyField(
+        "models.ExperimentBatch",
+        related_name="queue_entries",
+        on_delete=fields.CASCADE,
+        null=True
+    )
+    
+    # Queue management
+    status = fields.CharField(max_length=20, default='queued')
+    priority = fields.IntField(default=0)
+    added_at = fields.DatetimeField(auto_now_add=True)
+    started_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+    
+    # Error tracking
+    error_message = fields.TextField(null=True)
+    retry_count = fields.IntField(default=0)
+    
+    class Meta:
+        table = "experiment_queue"
+        ordering = ["-priority", "added_at"]  # Higher priority first, then FIFO
+    
+    def __str__(self) -> str:
+        return f"QueueEntry({self.experiment.name}, {self.status})"

@@ -6,6 +6,8 @@ from src.database.models import (
     ChatMessage,
     ConversationSummary,
     Experiment,
+    ExperimentBatch,
+    ExperimentQueue,
     RobotProfile,
     User,
 )
@@ -18,6 +20,8 @@ from src.database.session import (
 __all__ = [
     "User",
     "Experiment",
+    "ExperimentBatch",
+    "ExperimentQueue",
     "ChatMessage",
     "ConversationSummary",
     "RobotProfile",
@@ -25,3 +29,4 @@ __all__ = [
     "close_database",
     "get_database_status",
 ]
+

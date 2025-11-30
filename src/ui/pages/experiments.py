@@ -1,15 +1,116 @@
 """
-Experiment management and chat interface pages.
+Experiment management and chat interface.
 
-Provides setup for robot-robot experiments and real-time chat display.
+Setup and monitor robot-robot experiments.
 """
 
 from nicegui import ui, app
 import asyncio
+from starlette.requests import Request
 from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
+
+
+def get_friendly_error_message(error_text: str) -> tuple[str, str, str]:
+    """
+    Parse technical error message and return user-friendly version.
+    
+    Returns:
+        tuple: (badge_text, tooltip_message, severity_color)
+               severity_color: 'red' (critical), 'orange' (retryable), 'yellow' (warning)
+    """
+    if not error_text:
+        return ('⚠ Failed', 'Experiment failed for unknown reason. Contact administrator.', 'red')
+    
+    error_lower = error_text.lower()
+    
+    # Rate limit errors (most common, retryable)
+    if 'rate' in error_lower and 'limit' in error_lower:
+        if 'gemini' in error_lower:
+            return (
+                '⏸ Rate Limited',
+                '🔄 Gemini API rate limit reached. The batch will automatically retry later. '
+                'No action needed - just wait a few minutes.',
+                'orange'
+            )
+        elif 'openai' in error_lower:
+            return (
+                '⏸ Rate Limited',
+                '🔄 OpenAI API rate limit reached. The batch will automatically retry later. '
+                'No action needed - just wait a few minutes.',
+                'orange'
+            )
+        else:
+            return (
+                '⏸ Rate Limited',
+                '🔄 API rate limit reached. The experiment will retry automatically. '
+                'No action needed - just wait a bit.',
+                'orange'
+            )
+    
+    # Authentication/API key errors (admin action needed)
+    if 'auth' in error_lower or 'api key' in error_lower or 'unauthorized' in error_lower or '401' in error_text:
+        if 'gemini' in error_lower:
+            return (
+                '🔑 Auth Error',
+                '❌ Gemini API key is invalid or missing. Contact admin to update API credentials in settings.',
+                'red'
+            )
+        elif 'openai' in error_lower:
+            return (
+                '🔑 Auth Error',
+                '❌ OpenAI API key is invalid or missing. Contact admin to update API credentials in settings.',
+                'red'
+            )
+        else:
+            return (
+                '🔑 Auth Error',
+                '❌ API authentication failed. Contact admin to check API key configuration.',
+                'red'
+            )
+    
+    # Quota/billing errors (admin action needed)
+    if 'quota' in error_lower or 'billing' in error_lower or 'exceeded' in error_lower:
+        return (
+            '💳 Quota Exceeded',
+            '❌ API quota or billing limit reached. Contact admin to upgrade API plan or check billing.',
+            'red'
+        )
+    
+    # Model not found errors
+    if 'model' in error_lower and ('not found' in error_lower or 'does not exist' in error_lower):
+        return (
+            '🤖 Model Error',
+            '❌ AI model not found or unavailable. Contact admin to check robot profile configuration.',
+            'red'
+        )
+    
+    # Network/timeout errors (retryable)
+    if 'timeout' in error_lower or 'connection' in error_lower or 'network' in error_lower:
+        return (
+            '🌐 Network Error',
+            '🔄 Network connection issue. The batch will retry automatically. '
+            'If this persists, contact admin.',
+            'orange'
+        )
+    
+    # Content policy violations
+    if 'content' in error_lower and ('policy' in error_lower or 'safety' in error_lower or 'filter' in error_lower):
+        return (
+            '⚠ Content Filtered',
+            '⚠️ AI refused to respond due to content policy. Try rephrasing the prompt or contact admin.',
+            'yellow'
+        )
+    
+    # Generic error with partial message
+    error_snippet = error_text[:100] + ('...' if len(error_text) > 100 else '')
+    return (
+        '⚠ Failed',
+        f'❌ Technical error occurred: {error_snippet}\n\nContact admin with experiment ID for details.',
+        'red'
+    )
 
 
 async def export_all_experiments():
@@ -31,7 +132,7 @@ async def export_all_experiments():
                 "initial_prompt": exp.initial_prompt,
                 "max_turns": exp.max_turns,
                 "created_at": exp.created_at.isoformat(),
-                "created_by": exp.created_by.username
+                "created_by": exp.created_by.display_name
             },
             "robots": {
                 "robot_a": {
@@ -70,9 +171,7 @@ async def export_all_experiments():
 
 @ui.page('/experiments')
 async def experiments_list_page():
-    """
-    List all experiments with status and actions.
-    """
+    """List all experiments."""
     create_navbar()
     
     # Header with export button
@@ -90,7 +189,7 @@ async def experiments_list_page():
     ui.space()
     
     # Load experiments
-    experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile')
+    experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
     
     async def delete_experiment(exp_id: int):
         await Experiment.filter(id=exp_id).delete()
@@ -103,7 +202,46 @@ async def experiments_list_page():
         for exp in experiments:
             with ui.card().classes('w-full'):
                 with ui.row().classes('w-full items-center justify-between'):
-                    ui.label(exp.name).classes('text-h5')
+                    with ui.row().classes('items-center gap-2'):
+                        ui.label(exp.name).classes('text-h5')
+                        
+                        # Batch indicator
+                        if exp.batch:
+                            ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
+                        
+                        # Check completion status for batch experiments
+                        if exp.batch:
+                            msg_count = await ChatMessage.filter(experiment=exp).count()
+                            expected_messages = exp.max_turns * 2
+                            
+                            if msg_count >= expected_messages:
+                                ui.badge('✓ Complete', color='green')
+                            elif msg_count > 0:
+                                # Check queue status for more detail
+                                from src.database import ExperimentQueue
+                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                                if queue_entry:
+                                    if queue_entry.status == 'failed':
+                                        # Parse error for user-friendly message
+                                        badge_text, tooltip_msg, severity = get_friendly_error_message(queue_entry.error_message or '')
+                                        
+                                        # Show badge with message count
+                                        ui.badge(f'{badge_text} ({msg_count}/{expected_messages})', color=severity).props('outline')
+                                        
+                                        # Add info icon with helpful tooltip
+                                        ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+                                        
+                                    elif queue_entry.status == 'running':
+                                        ui.badge(f'🔄 Running ({msg_count}/{expected_messages})', color='blue')
+                                    else:
+                                        ui.badge(f'Partial ({msg_count}/{expected_messages})', color='orange').props('outline')
+                            else:
+                                # No messages yet
+                                from src.database import ExperimentQueue
+                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                                if queue_entry and queue_entry.status == 'queued':
+                                    ui.badge('⏳ Queued', color='grey').props('outline')
+                    
                     with ui.row().classes('gap-2'):
                         ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
                         ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
@@ -117,15 +255,26 @@ async def experiments_list_page():
                 
                 # Stats
                 msg_count = await ChatMessage.filter(experiment=exp).count()
-                ui.label(f'{msg_count} messages').classes('text-caption')
+                if exp.batch:
+                    expected = exp.max_turns * 2
+                    ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
+                else:
+                    ui.label(f'{msg_count} messages').classes('text-caption')
 
 
 @ui.page('/experiments/create')
-async def create_experiment_page():
+async def create_experiment_page(request: Request):
     """
     Create a new experiment with robot selection.
     """
     create_navbar()
+    
+    # Get current user from middleware
+    user = getattr(request.state, 'user', None)
+    
+    if not user:
+        ui.label('Please log in to create experiments').classes('text-negative')
+        return
     
     ui.label('Create Experiment').classes('text-h4')
     
@@ -217,16 +366,6 @@ async def create_experiment_page():
                 ui.notify('Please select different robots for A and B', type='warning')
                 return
             
-            # Get or create default user
-            from src.database.models import User
-            user = await User.get_or_none(username='default_user')
-            if not user:
-                user = await User.create(
-                    username='default_user',
-                    email='user@example.com',
-                    hashed_password='placeholder'
-                )
-            
             # Get robot profiles
             robot_a = await RobotProfile.get(id=robot_a_select.value)
             robot_b = await RobotProfile.get(id=robot_b_select.value)
@@ -271,7 +410,7 @@ async def export_to_csv(experiment_id: int):
     writer.writerow(['Description', experiment.description or ''])
     writer.writerow(['Topic/Initial Prompt', experiment.initial_prompt])
     writer.writerow(['Max Turns', experiment.max_turns])
-    writer.writerow(['Created By', experiment.created_by.username])
+    writer.writerow(['Created By', experiment.created_by.display_name])
     writer.writerow(['Created At', experiment.created_at.isoformat()])
     writer.writerow([])  # Blank row
     
@@ -336,7 +475,7 @@ async def export_to_json(experiment_id: int):
             "initial_prompt": experiment.initial_prompt,
             "max_turns": experiment.max_turns,
             "created_at": experiment.created_at.isoformat(),
-            "created_by": experiment.created_by.username
+            "created_by": experiment.created_by.display_name
         },
         "robots": {
             "robot_a": {

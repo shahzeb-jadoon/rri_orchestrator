@@ -1,0 +1,11 @@
+prompt,description,max_turns
+What is artificial intelligence?,Introduction to AI concepts,5
+Explain how machine learning differs from traditional programming,ML vs traditional approaches,7
+Describe the role of neural networks in deep learning,Neural networks overview,6
+What are the ethical considerations in AI development?,AI ethics discussion,7
+How does natural language processing work?,NLP fundamentals,5
+Explain the concept of computer vision,Computer vision basics,6
+What is reinforcement learning?,RL introduction,5
+Describe the importance of data quality in machine learning,Data quality in ML,7
+How do transformers work in modern AI models?,Transformer architecture,6
+What are the practical applications of AI in healthcare?,AI in healthcare,7
