@@ -10,8 +10,9 @@ from starlette.requests import Request
 from datetime import datetime
 import asyncio
 
-from src.database import User, ExperimentBatch, Experiment, RobotProfile
+from src.database import User, ExperimentBatch, Experiment, RobotProfile, ExperimentQueue
 from src.batch import parse_csv, validate_csv_format
+from src.ui.components import create_navbar
 
 
 # Global state for current upload session
@@ -25,6 +26,8 @@ upload_session = {
 @ui.page('/batch/create')
 async def batch_create_page(request: Request):
     """Batch creation page with CSV upload and preview."""
+    
+    create_navbar()
     
     # Get current user from request state (set by middleware)
     user = getattr(request.state, 'user', None)
@@ -213,7 +216,7 @@ async def batch_create_page(request: Request):
                         
                         # Create individual experiments
                         for i, parsed_exp in enumerate(result.experiments):
-                            await Experiment.create(
+                            exp = await Experiment.create(
                                 name=f"{batch.name} - Experiment {i+1}",
                                 description=parsed_exp.description,
                                 created_by=user,
@@ -223,6 +226,14 @@ async def batch_create_page(request: Request):
                                 max_turns=parsed_exp.max_turns,
                                 robot_a_profile_name=robot_a_select.value,
                                 robot_b_profile_name=robot_b_select.value
+                            )
+                            
+                            # Add to queue for execution
+                            await ExperimentQueue.create(
+                                experiment=exp,
+                                batch=batch,
+                                priority=0,
+                                status='queued'
                             )
                         
                         # Clear session

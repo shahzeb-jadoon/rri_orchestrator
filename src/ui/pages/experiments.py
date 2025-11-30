@@ -31,7 +31,7 @@ async def export_all_experiments():
                 "initial_prompt": exp.initial_prompt,
                 "max_turns": exp.max_turns,
                 "created_at": exp.created_at.isoformat(),
-                "created_by": exp.created_by.username
+                "created_by": exp.created_by.display_name
             },
             "robots": {
                 "robot_a": {
@@ -217,15 +217,14 @@ async def create_experiment_page():
                 ui.notify('Please select different robots for A and B', type='warning')
                 return
             
-            # Get or create default user
-            from src.database.models import User
-            user = await User.get_or_none(username='default_user')
+            # Get current user from request
+            from starlette.requests import Request
+            request: Request = app._request  # Access current request
+            user = getattr(request.state, 'user', None)
+            
             if not user:
-                user = await User.create(
-                    username='default_user',
-                    email='user@example.com',
-                    hashed_password='placeholder'
-                )
+                ui.notify('Please log in to create experiments', type='negative')
+                return
             
             # Get robot profiles
             robot_a = await RobotProfile.get(id=robot_a_select.value)
@@ -271,7 +270,7 @@ async def export_to_csv(experiment_id: int):
     writer.writerow(['Description', experiment.description or ''])
     writer.writerow(['Topic/Initial Prompt', experiment.initial_prompt])
     writer.writerow(['Max Turns', experiment.max_turns])
-    writer.writerow(['Created By', experiment.created_by.username])
+    writer.writerow(['Created By', experiment.created_by.display_name])
     writer.writerow(['Created At', experiment.created_at.isoformat()])
     writer.writerow([])  # Blank row
     
@@ -336,7 +335,7 @@ async def export_to_json(experiment_id: int):
             "initial_prompt": experiment.initial_prompt,
             "max_turns": experiment.max_turns,
             "created_at": experiment.created_at.isoformat(),
-            "created_by": experiment.created_by.username
+            "created_by": experiment.created_by.display_name
         },
         "robots": {
             "robot_a": {
