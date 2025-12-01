@@ -195,3 +195,43 @@ class ExperimentListViewModel:
         return 'grey'
 
 
+class MessageViewModel:
+    """Chat message view model for smooth rendering."""
+    
+    def __init__(
+        self,
+        msg_id: int,
+        content: str,
+        robot_name: str,
+        model_used: str,
+        token_count: int,
+        input_tokens: Optional[int],
+        output_tokens: Optional[int],
+        cost_usd: Optional[float],
+        response_time_ms: Optional[int],
+        created_at: str
+    ):
+        self.id = msg_id
+        self.content = content
+        self.robot_name = robot_name
+        self.model_used = model_used
+        self.token_count = token_count
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cost_usd = cost_usd
+        self.response_time_ms = response_time_ms
+        self.created_at = created_at
+    
+    @property
+    def metadata_text(self) -> str:
+        """Get formatted metadata string."""
+        metadata = f'Model: {self.model_used} | Tokens: {self.token_count}'
+        if self.input_tokens and self.output_tokens:
+            metadata += f' (in: {self.input_tokens}, out: {self.output_tokens})'
+        if self.cost_usd:
+            metadata += f' | Cost: ${self.cost_usd:.4f}'
+        if self.response_time_ms:
+            metadata += f' | Time: {self.response_time_ms}ms'
+        return metadata
+
+

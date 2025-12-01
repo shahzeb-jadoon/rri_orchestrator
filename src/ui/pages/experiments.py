@@ -11,7 +11,7 @@ from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
 from src.ui.utils import get_friendly_error_message
-from src.ui.viewmodels import ExperimentListViewModel
+from src.ui.viewmodels import ExperimentListViewModel, MessageViewModel
 
 
 async def export_all_experiments():
@@ -882,41 +882,55 @@ async def chat_page(experiment_id: int):
     
     ui.separator()
     
-    # Chat display area
-    chat_container = ui.column().classes('w-full max-w-4xl gap-2')
+    # Store message ViewModels
+    message_vms = {}
     
-    # Load and display messages
-    @ui.refreshable
-    async def display_messages():
+    async def load_messages():
+        """Load messages from database into ViewModels."""
         messages = await ChatMessage.filter(experiment=experiment).order_by('created_at')
         
-        chat_container.clear()
+        # Only add new messages, don't clear existing ones
+        existing_ids = set(message_vms.keys())
+        new_ids = set(msg.id for msg in messages)
         
-        with chat_container:
-            if not messages:
-                ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
-            else:
-                for msg in messages:
-                    # Determine robot and color
-                    is_robot_a = msg.robot_name == 'robot_a'
-                    robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
-                    card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
-                    
-                    with ui.card().classes(f'w-full {card_color}'):
-                        ui.label(f'🤖 {robot_name}').classes('text-bold')
-                        ui.label(msg.content).classes('text-body1 whitespace-pre-wrap')
-                        
-                        # Metadata
-                        metadata = f'Model: {msg.model_used} | Tokens: {msg.token_count}'
-                        if msg.input_tokens and msg.output_tokens:
-                            metadata += f' (in: {msg.input_tokens}, out: {msg.output_tokens})'
-                        if msg.cost_usd:
-                            metadata += f' | Cost: ${msg.cost_usd:.4f}'
-                        if msg.response_time_ms:
-                            metadata += f' | Time: {msg.response_time_ms}ms'
-                        
-                        ui.label(metadata).classes('text-caption text-grey')
+        # Remove deleted messages (shouldn't happen but just in case)
+        for msg_id in existing_ids - new_ids:
+            del message_vms[msg_id]
+        
+        # Add new messages
+        for msg in messages:
+            if msg.id not in message_vms:
+                message_vms[msg.id] = MessageViewModel(
+                    msg_id=msg.id,
+                    content=msg.content,
+                    robot_name=msg.robot_name,
+                    model_used=msg.model_used,
+                    token_count=msg.token_count,
+                    input_tokens=msg.input_tokens,
+                    output_tokens=msg.output_tokens,
+                    cost_usd=msg.cost_usd,
+                    response_time_ms=msg.response_time_ms,
+                    created_at=str(msg.created_at)
+                )
     
+    # Chat display - NiceGUI @ui.refreshable handles smart DOM updates
+    @ui.refreshable
+    async def display_messages():
+        if not message_vms:
+            ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
+        else:
+            for vm in message_vms.values():
+                # Determine robot and color
+                is_robot_a = vm.robot_name == 'robot_a'
+                robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
+                card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
+                
+                with ui.card().classes(f'w-full {card_color}'):
+                    ui.label(f'🤖 {robot_name}').classes('text-bold')
+                    ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
+                    ui.label(vm.metadata_text).classes('text-caption text-grey')
+    
+    await load_messages()
     await display_messages()
     
     # State management
@@ -1080,6 +1094,7 @@ async def chat_page(experiment_id: int):
                         initial_prompt=prompt
                     )
                     
+                    await load_messages()
                     await display_messages.refresh()
                     await update_stats()
                     await show_initial_prompt.refresh()
