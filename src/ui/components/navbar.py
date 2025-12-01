@@ -147,11 +147,3 @@ def create_navbar():
             
             # Auto-refresh every 1 second
             ui.timer(1.0, refresh_users)
-            
-            # Logout button
-            async def logout():
-                """Clear user session and redirect to onboarding."""
-                app.storage.user.clear()
-                ui.navigate.to('/onboarding')
-            
-            ui.button('Logout', on_click=logout).props('flat color=white').classes('text-white')
