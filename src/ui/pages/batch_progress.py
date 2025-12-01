@@ -48,10 +48,45 @@ async def batch_progress_page(batch_id: int, request: Request):
     
     ui.space()
     
-    # Refreshable components for smooth updates without scroll reset
-    @ui.refreshable
-    async def render_stats():
-        """Render batch statistics cards."""
+    # Create UI elements once - we'll update them in-place (no rebuild!)
+    
+    # Progress section
+    with ui.card().classes('w-full p-4'):
+        progress_label = ui.label('').classes('text-h6')
+        progress_bar = ui.linear_progress(value=0).props('size=20px color=positive')
+    
+    # Status cards
+    with ui.grid(columns=4).classes('gap-4 w-full'):
+        # Completed
+        with ui.card().classes('p-4 text-center bg-positive'):
+            ui.icon('check_circle', size='lg').classes('text-white')
+            completed_count = ui.label('0').classes('text-h4 text-white')
+            ui.label('Completed').classes('text-white')
+        
+        # Running
+        with ui.card().classes('p-4 text-center bg-blue'):
+            ui.icon('play_circle', size='lg').classes('text-white')
+            running_count = ui.label('0').classes('text-h4 text-white')
+            ui.label('Running').classes('text-white')
+        
+        # Queued
+        with ui.card().classes('p-4 text-center bg-grey'):
+            ui.icon('schedule', size='lg').classes('text-white')
+            queued_count = ui.label('0').classes('text-white text-h4')
+            ui.label('Queued').classes('text-white')
+        
+        # Failed
+        with ui.card().classes('p-4 text-center bg-negative'):
+            ui.icon('error', size='lg').classes('text-white')
+            failed_count = ui.label('0').classes('text-h4 text-white')
+            ui.label('Failed').classes('text-white')
+    
+    # Experiments list container
+    ui.label('Experiments').classes('text-h6 mt-4')
+    experiments_container = ui.column().classes('w-full gap-2')
+    
+    async def update_stats():
+        """Update statistics without rebuilding DOM."""
         # Get queue statistics
         total = await ExperimentQueue.filter(batch_id=batch_id).count()
         completed = await ExperimentQueue.filter(batch_id=batch_id, status='completed').count()
@@ -59,96 +94,69 @@ async def batch_progress_page(batch_id: int, request: Request):
         queued = await ExperimentQueue.filter(batch_id=batch_id, status='queued').count()
         failed = await ExperimentQueue.filter(batch_id=batch_id, status='failed').count()
         
-        # Progress bar
+        # Update existing elements (no DOM rebuild!)
         progress = (completed / total * 100) if total > 0 else 0
-        with ui.card().classes('w-full p-4'):
-            ui.label(f'Progress: {completed}/{total} ({progress:.1f}%)').classes('text-h6')
-            ui.linear_progress(value=completed / total if total > 0 else 0).props('size=20px color=positive')
+        progress_label.text = f'Progress: {completed}/{total} ({progress:.1f}%)'
+        progress_bar.value = completed / total if total > 0 else 0
         
-        # Status cards
-        with ui.grid(columns=4).classes('gap-4 w-full'):
-            # Completed
-            with ui.card().classes('p-4 text-center bg-positive'):
-                ui.icon('check_circle', size='lg').classes('text-white')
-                ui.label(str(completed)).classes('text-h4 text-white')
-                ui.label('Completed').classes('text-white')
-            
-            # Running
-            with ui.card().classes('p-4 text-center bg-blue'):
-                ui.icon('play_circle', size='lg').classes('text-white')
-                ui.label(str(running)).classes('text-h4 text-white')
-                ui.label('Running').classes('text-white')
-            
-            # Queued
-            with ui.card().classes('p-4 text-center bg-grey'):
-                ui.icon('schedule', size='lg').classes('text-white')
-                ui.label(str(queued)).classes('text-h4 text-white')
-                ui.label('Queued').classes('text-white')
-            
-            # Failed
-            with ui.card().classes('p-4 text-center bg-negative'):
-                ui.icon('error', size='lg').classes('text-white')
-                ui.label(str(failed)).classes('text-h4 text-white')
-                ui.label('Failed').classes('text-white')
+        completed_count.text = str(completed)
+        running_count.text = str(running)
+        queued_count.text = str(queued)
+        failed_count.text = str(failed)
     
-    @ui.refreshable
-    async def render_experiments():
-        """Render experiments list."""
-        ui.label('Experiments').classes('text-h6 mt-4')
+    async def update_experiments():
+        """Rebuild experiments list only (smaller scope)."""
+        experiments_container.clear()
         
         queue_entries = await ExperimentQueue.filter(
             batch_id=batch_id
         ).prefetch_related('experiment', 'experiment__robot_a_profile', 'experiment__robot_b_profile').order_by('id')
         
-        for entry in queue_entries:
-            exp = entry.experiment
-            with ui.card().classes('w-full'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    with ui.column():
-                        # Status icon + name
-                        status_icon = {
-                            'completed': '✓',
-                            'running': '🔄',
-                            'queued': '⏳',
-                            'failed': '⚠',
-                            'cancelled': '❌'
-                        }.get(entry.status, '?')
+        with experiments_container:
+            for entry in queue_entries:
+                exp = entry.experiment
+                with ui.card().classes('w-full'):
+                    with ui.row().classes('w-full items-center justify-between'):
+                        with ui.column():
+                            # Status icon + name
+                            status_icon = {
+                                'completed': '✓',
+                                'running': '🔄',
+                                'queued': '⏳',
+                                'failed': '⚠',
+                                'cancelled': '❌'
+                            }.get(entry.status, '?')
+                            
+                            ui.label(f'{status_icon} {exp.name}').classes('text-subtitle1 font-bold')
+                            
+                            # Message count
+                            msg_count = await ChatMessage.filter(experiment=exp).count()
+                            expected = exp.max_turns * 2
+                            ui.label(f'{msg_count}/{expected} messages').classes('text-caption text-grey')
                         
-                        ui.label(f'{status_icon} {exp.name}').classes('text-subtitle1 font-bold')
-                        
-                        # Message count
-                        msg_count = await ChatMessage.filter(experiment=exp).count()
-                        expected = exp.max_turns * 2
-                        ui.label(f'{msg_count}/{expected} messages').classes('text-caption text-grey')
-                    
-                    with ui.row().classes('gap-2'):
-                        ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
-                        
-                        # Show intelligent error message if failed
-                        if entry.status == 'failed' and entry.error_message:
-                            badge_text, tooltip_msg, severity = get_friendly_error_message(entry.error_message)
-                            ui.badge(badge_text, color=severity).props('outline')
-                            ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+                        with ui.row().classes('gap-2'):
+                            ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
+                            
+                            # Show intelligent error message if failed
+                            if entry.status == 'failed' and entry.error_message:
+                                badge_text, tooltip_msg, severity = get_friendly_error_message(entry.error_message)
+                                ui.badge(badge_text, color=severity).props('outline')
+                                ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
     
-    # Initial render
-    await render_stats()
-    await render_experiments()
+    # Initial load
+    await update_stats()
+    await update_experiments()
     
     async def refresh_data():
-        """Refresh batch statistics and experiments list without scroll reset."""
-        # Save scroll position before refresh (using JavaScript)
-        scroll_position = await ui.run_javascript('window.scrollY', timeout=0.5)
-        
+        """Refresh data smoothly without DOM flicker."""
         # Re-query batch for control button state
         batch_data = await ExperimentBatch.get(id=batch_id)
         
-        # Refresh components (this rebuilds DOM)
-        await render_stats.refresh()
-        await render_experiments.refresh()
+        # Update stats (no rebuild - just text changes!)
+        await update_stats()
         
-        # Restore scroll position after refresh
-        if scroll_position is not None:
-            await ui.run_javascript(f'window.scrollTo(0, {scroll_position})', timeout=0.5)
+        # Update experiments list (only this section rebuilds)
+        await update_experiments()
         
         # Update control buttons
         if can_control:
