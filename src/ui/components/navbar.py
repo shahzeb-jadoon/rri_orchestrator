@@ -127,9 +127,10 @@ def create_navbar():
             # Render widget
             render_active_users()
             
-            # Logout button
-            def logout():
+            # Logout button - clear session properly
+            async def logout():
+                """Clear user session and redirect to onboarding."""
                 app.storage.user.clear()
-                ui.open('/onboarding')
+                ui.navigate.to('/onboarding')
             
-            ui.button('Logout', on_click=logout).props('flat color=white')
+            ui.button('Logout', on_click=logout).props('flat color=white').classes('text-white')
