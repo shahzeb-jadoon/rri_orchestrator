@@ -407,8 +407,8 @@ async def experiments_list_page(request: Request):
                 vm.batch_name = exp.batch.name
                 vm.batch_creator_name = exp.batch.created_by.display_name if exp.batch.created_by else (exp.batch.created_by_name or 'Unknown')
             
-            # Get message count
-            vm.msg_count = await ChatMessage.filter(experiment=exp).count()
+            # Get message count (exclude interjections from count)
+            vm.msg_count = await ChatMessage.filter(experiment=exp, is_interjection=False).count()
             
             # Get queue status for batch experiments
             if exp.batch_id:
@@ -997,8 +997,8 @@ async def chat_page(experiment_id: int):
             """Display max turns status and extension options."""
             # Reload experiment to get latest max_turns
             await experiment.refresh_from_db()
-            robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
-            robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+            robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a', is_interjection=False).count()
+            robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b', is_interjection=False).count()
             max_per_robot = experiment.max_turns or 10
             
             if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
@@ -1057,32 +1057,38 @@ async def chat_page(experiment_id: int):
             
             async def run_single_turn():
                 """Run one turn of the conversation."""
-                messages = await ChatMessage.filter(experiment=experiment).count()
+                messages = await ChatMessage.filter(experiment=experiment, is_interjection=False).count()
                 
                 # Check max turns
-                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
-                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a', is_interjection=False).count()
+                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b', is_interjection=False).count()
                 max_per_robot = experiment.max_turns or 10
                 
                 if robot_a_count >= max_per_robot and robot_b_count >= max_per_robot:
-                    # Notify in both modes (once)
-                    if not state['max_turns_notified']:
-                        ui.notify(
-                            f'Max turns reached! Each robot has spoken {max_per_robot} times.',
-                            type='warning',
-                            timeout=5000
-                        )
-                        state['max_turns_notified'] = True
-                        await max_turns_status.refresh()
-                    
                     # In manual mode: auto-increment by 1 and continue
                     if not state['auto_mode']:
+                        if not state['max_turns_notified']:
+                            ui.notify(
+                                f'Max turns reached! Auto-extending by 1 turn.',
+                                type='info',
+                                timeout=3000
+                            )
+                            state['max_turns_notified'] = True
+                        
                         experiment.max_turns += 1
                         await experiment.save()
-                        ui.notify(f'Max turns extended to {experiment.max_turns}', type='info', timeout=2000)
                         await max_turns_status.refresh()
+                        # Continue execution - don't return here
                     else:
                         # In auto mode: stop and show extension UI
+                        if not state['max_turns_notified']:
+                            ui.notify(
+                                f'Max turns reached! Each robot has spoken {max_per_robot} times.',
+                                type='warning',
+                                timeout=5000
+                            )
+                            state['max_turns_notified'] = True
+                        
                         status_label.text = f'Max turns reached ({max_per_robot} per robot)'
                         await max_turns_status.refresh()
                         return False
@@ -1250,8 +1256,8 @@ async def chat_page(experiment_id: int):
             async def update_max_turns_handler():
                 """Show dialog to update max_turns while paused."""
                 # Get current progress
-                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
-                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a', is_interjection=False).count()
+                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b', is_interjection=False).count()
                 current_progress = max(robot_a_count, robot_b_count)
                 current_max = experiment.max_turns or 10
                 
