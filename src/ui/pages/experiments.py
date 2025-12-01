@@ -479,12 +479,8 @@ async def experiments_list_page(request: Request):
         if current_page >= total_pages:
             next_btn.disable()
     
-    # Auto-refresh every 2 seconds
-    async def refresh_data():
-        await load_data()
-        render_experiments.refresh()
-    
-    ui.timer(2.0, refresh_data)
+    # Manual refresh button instead of auto-refresh to prevent twitching
+    ui.button('🔄 Refresh', on_click=lambda: (asyncio.create_task(load_data()), render_experiments.refresh())).props('flat color=grey')
     
     # Keep existing export functions (they're referenced above)
     async def download_batch_csv(batch_id):

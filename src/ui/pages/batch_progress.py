@@ -248,5 +248,6 @@ async def batch_progress_page(batch_id: int, request: Request):
         pause_btn.on_click(toggle_pause)
         cancel_btn.on_click(cancel_batch)
     
-    # Auto-refresh every 2 seconds (smooth updates with zero flicker!)
-    ui.timer(2.0, refresh_data)
+    # Manual refresh button to prevent tab twitching
+    with ui.row().classes('w-full justify-center mt-4'):
+        ui.button('🔄 Refresh Status', on_click=refresh_data).props('flat color=grey')
