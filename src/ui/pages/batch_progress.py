@@ -53,67 +53,85 @@ async def batch_progress_page(batch_id: int, request: Request):
     batch_vm = BatchViewModel(batch_id, batch.name, batch.total_experiments)
     experiment_vms = {}  # {queue_entry_id: ExperimentViewModel}
     
-    # Reactive UI with @ui.refreshable - NiceGUI handles smart DOM updates!
+    # UI Element References for in-place updates (NO rebuild)
+    progress_text_label = None
+    progress_bar = None
+    completed_label = None
+    running_label = None
+    queued_label = None
+    failed_label = None
+    experiment_status_labels = {}  # {entry_id: ui.label}
+    experiment_progress_labels = {}  # {entry_id: ui.label}
+    experiment_badges = {}  # {entry_id: {'badge': ui.badge, 'icon': ui.icon}}
     
-    # Progress section
-    @ui.refreshable
-    def render_progress():
-        with ui.card().classes('w-full p-4'):
-            ui.label(batch_vm.progress_text).classes('text-h6')
-            ui.linear_progress(value=batch_vm.progress).props('size=20px color=positive')
+    # Render UI ONCE and store references
+    # Render UI ONCE and store references
     
-    # Status cards
-    @ui.refreshable
-    def render_stats():
-        with ui.grid(columns=4).classes('gap-4 w-full'):
-            # Completed
-            with ui.card().classes('p-4 text-center bg-positive'):
-                ui.icon('check_circle', size='lg').classes('text-white')
-                ui.label(str(batch_vm.completed)).classes('text-h4 text-white')
-                ui.label('Completed').classes('text-white')
-            
-            # Running
-            with ui.card().classes('p-4 text-center bg-blue'):
-                ui.icon('play_circle', size='lg').classes('text-white')
-                ui.label(str(batch_vm.running)).classes('text-h4 text-white')
-                ui.label('Running').classes('text-white')
-            
-            # Queued
-            with ui.card().classes('p-4 text-center bg-grey'):
-                ui.icon('schedule', size='lg').classes('text-white')
-                ui.label(str(batch_vm.queued)).classes('text-h4 text-white')
-                ui.label('Queued').classes('text-white')
-            
-            # Failed
-            with ui.card().classes('p-4 text-center bg-negative'):
-                ui.icon('error', size='lg').classes('text-white')
-                ui.label(str(batch_vm.failed)).classes('text-h4 text-white')
-                ui.label('Failed').classes('text-white')
+    # Progress section - create ONCE
+    with ui.card().classes('w-full p-4'):
+        progress_text_label = ui.label(batch_vm.progress_text).classes('text-h6')
+        progress_bar = ui.linear_progress(value=batch_vm.progress).props('size=20px color=positive')
+    
+    # Status cards - create ONCE
+    with ui.grid(columns=4).classes('gap-4 w-full'):
+        # Completed
+        with ui.card().classes('p-4 text-center bg-positive'):
+            ui.icon('check_circle', size='lg').classes('text-white')
+            completed_label = ui.label(str(batch_vm.completed)).classes('text-h4 text-white')
+            ui.label('Completed').classes('text-white')
+        
+        # Running
+        with ui.card().classes('p-4 text-center bg-blue'):
+            ui.icon('play_circle', size='lg').classes('text-white')
+            running_label = ui.label(str(batch_vm.running)).classes('text-h4 text-white')
+            ui.label('Running').classes('text-white')
+        
+        # Queued
+        with ui.card().classes('p-4 text-center bg-grey'):
+            ui.icon('schedule', size='lg').classes('text-white')
+            queued_label = ui.label(str(batch_vm.queued)).classes('text-h4 text-white')
+            ui.label('Queued').classes('text-white')
+        
+        # Failed
+        with ui.card().classes('p-4 text-center bg-negative'):
+            ui.icon('error', size='lg').classes('text-white')
+            failed_label = ui.label(str(batch_vm.failed)).classes('text-h4 text-white')
+            ui.label('Failed').classes('text-white')
     
     # Experiments list
     ui.label('Experiments').classes('text-h6 mt-4')
     
-    @ui.refreshable
-    def render_experiments():
-        """Render experiments declaratively - NiceGUI handles smart updates."""
-        for vm in experiment_vms.values():
-            with ui.card().classes('w-full'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    with ui.column():
-                        # Status icon + name
-                        ui.label(vm.status_with_name).classes('text-subtitle1 font-bold')
+    # Container for experiment cards
+    experiments_container = ui.column().classes('w-full gap-2')
+    
+    def render_experiment_cards_initial():
+        """Render experiment cards ONCE and store references."""
+        experiments_container.clear()
+        experiment_status_labels.clear()
+        experiment_progress_labels.clear()
+        experiment_badges.clear()
+        
+        with experiments_container:
+            for vm in experiment_vms.values():
+                with ui.card().classes('w-full'):
+                    with ui.row().classes('w-full items-center justify-between'):
+                        with ui.column():
+                            # Status icon + name
+                            status_label = ui.label(vm.status_with_name).classes('text-subtitle1 font-bold')
+                            experiment_status_labels[vm.id] = status_label
+                            
+                            # Message count
+                            progress_label = ui.label(vm.progress_text).classes('text-caption text-grey')
+                            experiment_progress_labels[vm.id] = progress_label
                         
-                        # Message count
-                        ui.label(vm.progress_text).classes('text-caption text-grey')
-                    
-                    with ui.row().classes('gap-2'):
-                        ui.button('View', on_click=lambda vm_id=vm.id: ui.navigate.to(f'/experiments/{vm_id}')).props('flat size=sm')
-                        
-                        # Error badge
-                        if vm.error_message:
-                            badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
-                            ui.badge(badge_text, color=severity).props('outline')
-                            ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+                        with ui.row().classes('gap-2'):
+                            ui.button('View', on_click=lambda vm_id=vm.id: ui.navigate.to(f'/experiments/{vm_id}')).props('flat size=sm')
+                            
+                            # Error badge placeholder (only render if badge_text exists - prevents glitching)
+                            if vm.badge_text:
+                                badge = ui.badge(vm.badge_text, color=vm.badge_severity).props('outline')
+                                icon = ui.icon('help_outline', size='sm').classes(f'text-{vm.badge_severity}').tooltip(vm.badge_tooltip).style('cursor: help')
+                                experiment_badges[vm.id] = {'badge': badge, 'icon': icon}
     
     async def load_data():
         """Load data from database and populate ViewModels."""
@@ -147,6 +165,17 @@ async def batch_progress_page(batch_id: int, request: Request):
             vm.status = entry.status
             vm.msg_count = await ChatMessage.filter(experiment=exp).count()
             vm.error_message = entry.error_message if entry.status == 'failed' else None
+            
+            # Pre-compute badge properties (prevents recreation on every refresh)
+            if vm.error_message:
+                badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
+                vm.badge_text = badge_text
+                vm.badge_tooltip = tooltip_msg
+                vm.badge_severity = severity
+            else:
+                vm.badge_text = None
+                vm.badge_tooltip = None
+                vm.badge_severity = None
         
         # Remove VMs for deleted entries
         for entry_id in list(experiment_vms.keys()):
@@ -155,12 +184,10 @@ async def batch_progress_page(batch_id: int, request: Request):
     
     # Initial render
     await load_data()
-    render_progress()
-    render_stats()
-    render_experiments()
+    render_experiment_cards_initial()
     
-    async def refresh_data():
-        """Refresh data smoothly - just update ViewModels, then refresh UI!"""
+    async def update_ui_elements():
+        """Update UI elements IN-PLACE without rebuilding DOM."""
         # Re-query batch for control button state
         batch_data = await ExperimentBatch.get(id=batch_id)
         batch_vm.is_paused = batch_data.is_paused
@@ -168,19 +195,45 @@ async def batch_progress_page(batch_id: int, request: Request):
         # Update all ViewModels with latest data
         await load_data()
         
-        # Refresh UI components (NiceGUI's smart diffing = zero flicker!)
-        render_progress.refresh()
-        render_stats.refresh()
-        render_experiments.refresh()
+        # Update progress section
+        progress_text_label.text = batch_vm.progress_text
+        progress_bar.value = batch_vm.progress
         
-        # Update control buttons
+        # Update stats
+        completed_label.text = str(batch_vm.completed)
+        running_label.text = str(batch_vm.running)
+        queued_label.text = str(batch_vm.queued)
+        failed_label.text = str(batch_vm.failed)
+        
+        # Check if experiments list changed (new/deleted experiments)
+        current_vm_ids = set(experiment_vms.keys())
+        rendered_vm_ids = set(experiment_status_labels.keys())
+        
+        if current_vm_ids != rendered_vm_ids:
+            # Experiments added or removed - need to rebuild list
+            render_experiment_cards_initial()
+        else:
+            # Update existing experiments in-place
+            for vm_id, vm in experiment_vms.items():
+                if vm_id in experiment_status_labels:
+                    experiment_status_labels[vm_id].text = vm.status_with_name
+                if vm_id in experiment_progress_labels:
+                    experiment_progress_labels[vm_id].text = vm.progress_text
+                
+                # Update error badges if they exist
+                if vm_id in experiment_badges and vm.badge_text:
+                    experiment_badges[vm_id]['badge'].text = vm.badge_text
+                    experiment_badges[vm_id]['badge'].props(f'color={vm.badge_severity}')
+                    experiment_badges[vm_id]['icon'].classes(f'text-{vm.badge_severity}')
+                    experiment_badges[vm_id]['icon'].tooltip(vm.badge_tooltip)
+        
+        # Update pause button text
         if can_control:
+            pause_btn.text = '▶ Resume' if batch_vm.is_paused else '⏸ Pause'
             if batch_vm.is_paused:
                 pause_btn.props('color=positive icon=play_arrow')
-                pause_btn.text = 'Resume'
             else:
                 pause_btn.props('color=warning icon=pause')
-                pause_btn.text = 'Pause'
     
     # Batch control functions
     async def toggle_pause():
@@ -202,7 +255,7 @@ async def batch_progress_page(batch_id: int, request: Request):
             await batch_data.save()
             ui.notify('Batch paused - running experiments will continue, but no new ones will start', type='info')
         
-        await refresh_data()
+        await update_ui_elements()
     
     async def cancel_batch():
         """Cancel all queued experiments in batch."""
@@ -237,7 +290,7 @@ async def batch_progress_page(batch_id: int, request: Request):
                     
                     ui.notify(f'Cancelled {len(queued_entries)} queued experiments', type='warning')
                     dialog.close()
-                    await refresh_data()
+                    await update_ui_elements()
                 
                 ui.button('Confirm Cancellation', on_click=do_cancel).props('color=negative')
         
@@ -248,5 +301,5 @@ async def batch_progress_page(batch_id: int, request: Request):
         pause_btn.on_click(toggle_pause)
         cancel_btn.on_click(cancel_batch)
     
-    # Auto-refresh every 2 seconds (smooth updates with zero flicker!)
-    ui.timer(2.0, refresh_data)
+    # Auto-refresh every 2 seconds - IN-PLACE updates only (NO DOM rebuild!)
+    ui.timer(2.0, update_ui_elements)

@@ -285,6 +285,7 @@ class ExperimentBatch(Model):
     status = fields.CharField(max_length=20, default='pending')  # pending, running, paused, completed, failed
     started_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
+    scheduled_start = fields.DatetimeField(null=True)  # Optional: schedule batch for future execution
     
     # Progress counters
     experiments_completed = fields.IntField(default=0)

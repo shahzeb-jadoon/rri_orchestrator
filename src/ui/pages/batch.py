@@ -6,7 +6,7 @@ Upload CSV, review experiments, configure batch settings.
 
 from nicegui import ui, app
 from starlette.requests import Request
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import asyncio
 
 from src.database import User, ExperimentBatch, Experiment, RobotProfile, ExperimentQueue
@@ -200,6 +200,28 @@ async def build_config_section(result, user):
             'value',
             backward=lambda v: f'Max Concurrent Experiments: {int(v)}'
         ).classes('text-caption text-grey-7')
+        ui.label('💡 Tip: Use higher concurrency (8-10) for overnight scheduled batches').classes('text-caption text-blue-7 mt-1')
+        
+        # Scheduling section
+        ui.label('Schedule (Optional)').classes('text-subtitle2 font-bold mt-6 mb-2')
+        ui.label('Leave empty to start immediately, or set a future time for overnight execution').classes('text-caption text-grey-7 mb-2')
+        
+        # Get user's timezone offset from browser (will be awaited on page load)
+        user_tz_offset_minutes = await ui.run_javascript('new Date().getTimezoneOffset()', timeout=5.0) or 0
+        
+        with ui.row().classes('w-full gap-4'):
+            with ui.column().classes('flex-1'):
+                ui.label('Date (your local time)').classes('text-caption text-grey-7 mb-1')
+                schedule_date = ui.date(value=None).props('outlined clearable')
+            
+            with ui.column().classes('flex-1'):
+                ui.label('Time (your local time)').classes('text-caption text-grey-7 mb-1')
+                schedule_time = ui.time(value=None).props('outlined clearable')
+            
+            ui.button('Clear Schedule', on_click=lambda: (
+                setattr(schedule_date, 'value', None),
+                setattr(schedule_time, 'value', None)
+            )).props('flat size=sm color=grey')
         
         # Create batch button
         async def create_batch():
@@ -209,6 +231,38 @@ async def build_config_section(result, user):
                 return
             
             try:
+                # Parse scheduled start time if provided
+                scheduled_start = None
+                if schedule_date.value and schedule_time.value:
+                    date_str = schedule_date.value.replace('/', '-')
+                    time_str = schedule_time.value
+                    
+                    # Handle both HH:MM and HH:MM:SS formats
+                    if len(time_str.split(':')) == 2:
+                        time_str += ':00'
+                    
+                    datetime_str = f"{date_str} {time_str}"
+                    scheduled_start = datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
+                    
+                    # Convert user's local time to UTC for storage
+                    # user_tz_offset_minutes is negative for UTC+, positive for UTC-
+                    user_tz = timezone(timedelta(minutes=-user_tz_offset_minutes))
+                    scheduled_start = scheduled_start.replace(tzinfo=user_tz)
+                    scheduled_start_utc = scheduled_start.astimezone(timezone.utc)
+                    
+                    # Validate it's in the future (compare in UTC)
+                    now_utc = datetime.now(timezone.utc)
+                    if scheduled_start_utc <= now_utc:
+                        ui.notify('Scheduled time must be in the future', type='negative')
+                        return
+                    
+                    # Store as timezone-naive UTC (PostgreSQL will add timezone on storage)
+                    scheduled_start = scheduled_start_utc.replace(tzinfo=None)
+                    
+                elif schedule_date.value or schedule_time.value:
+                    ui.notify('Please set both date and time, or leave both empty', type='warning')
+                    return
+                
                 # Get selected robots
                 robot_a = await RobotProfile.get(id=robot_a_select.value)
                 robot_b = await RobotProfile.get(id=robot_b_select.value)
@@ -220,6 +274,7 @@ async def build_config_section(result, user):
                     created_by=user,
                     total_experiments=len(result.experiments),
                     max_concurrent=int(max_concurrent_slider.value),
+                    scheduled_start=scheduled_start,
                     status='pending'
                 )
                 
@@ -245,7 +300,14 @@ async def build_config_section(result, user):
                         status='queued'
                     )
                 
-                ui.notify(f'✓ Batch created with {len(result.experiments)} experiments!', type='positive')
+                # Success notification
+                if scheduled_start:
+                    ui.notify(
+                        f'✓ Batch scheduled for {scheduled_start.strftime("%Y-%m-%d %H:%M")} with {len(result.experiments)} experiments!',
+                        type='positive'
+                    )
+                else:
+                    ui.notify(f'✓ Batch created with {len(result.experiments)} experiments!', type='positive')
                 
                 # Navigate to experiments page
                 await asyncio.sleep(1)

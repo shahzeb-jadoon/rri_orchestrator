@@ -11,7 +11,7 @@ from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
 from src.ui.utils import get_friendly_error_message
-from src.ui.viewmodels import ExperimentListViewModel, MessageViewModel
+from src.ui.viewmodels import ExperimentListViewModel, MessageViewModel, ExperimentStatsViewModel, RobotStatsViewModel, BatchGroupViewModel
 
 
 async def export_all_experiments():
@@ -175,8 +175,15 @@ async def experiments_list_page(request: Request):
     
     # ViewModels storage
     experiment_vms = {}  # {experiment_id: ExperimentListViewModel}
-    batch_summaries = {}  # {batch_id: {'completed': 0, 'running': 0, ...}}
+    batch_group_vms = {}  # {batch_id: BatchGroupViewModel} - pre-computed batch groups
+    standalone_vms = []  # List of standalone ExperimentListViewModel (sorted)
     batch_expansion_states = {}  # {batch_id: True/False} - track which batches are expanded
+    
+    # UI Element References for in-place updates (NO rebuild)
+    batch_status_badges = {}  # {batch_id: ui.badge element}
+    experiment_status_badges = {}  # {exp_id: ui.badge element}
+    experiment_progress_labels = {}  # {exp_id: ui.label element}
+    
     total_experiments = 0
     total_pages = 1
     
@@ -200,9 +207,9 @@ async def experiments_list_page(request: Request):
         render_experiments.refresh()
     
     def render_experiment_card_from_vm(vm: ExperimentListViewModel):
-        """Render a single experiment card from ViewModel."""
+        """Render a single experiment card from ViewModel - creates UI ONCE."""
         # Make card clickable
-        with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all').on('click', lambda: ui.navigate.to(f'/experiments/{vm.id}')):
+        with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all').on('click', lambda vm_id=vm.id: ui.navigate.to(f'/experiments/{vm_id}')):
             with ui.row().classes('w-full items-center justify-between'):
                 with ui.row().classes('items-center gap-2'):
                     ui.label(vm.name).classes('text-h5')
@@ -215,115 +222,67 @@ async def experiments_list_page(request: Request):
                 with ui.row().classes('gap-2'):
                     # Status for batch experiments
                     if vm.is_batch and vm.status_badge_text:
-                        ui.badge(vm.status_badge_text, color=vm.status_badge_color).props('outline')
-                        if vm.queue_status == 'failed' and vm.error_message:
-                            badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
-                            ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+                        status_badge = ui.badge(vm.status_badge_text, color=vm.status_badge_color).props('outline')
+                        experiment_status_badges[vm.id] = status_badge
+                    
+                    # Error badge (for both batch and standalone experiments)
+                    if vm.error_badge_text:
+                        ui.badge(vm.error_badge_text, color=vm.error_badge_severity).props('outline')
+                        ui.icon('help_outline', size='sm').classes(f'text-{vm.error_badge_severity}').tooltip(vm.error_badge_tooltip).style('cursor: help')
             
             # Action buttons row (with click.stop to prevent card navigation)
             with ui.row().classes('gap-2').on('click.stop'):
-                ui.button('View', on_click=lambda: ui.navigate.to(f'/experiments/{vm.id}')).props('flat size=sm')
-                ui.button('📥 CSV', on_click=lambda: export_to_csv(vm.id)).props('flat size=sm')
-                ui.button('📥 JSON', on_click=lambda: export_to_json(vm.id)).props('flat size=sm')
+                ui.button('View', on_click=lambda vm_id=vm.id: ui.navigate.to(f'/experiments/{vm_id}')).props('flat size=sm')
+                ui.button('📥 CSV', on_click=lambda vm_id=vm.id: export_to_csv(vm_id)).props('flat size=sm')
+                ui.button('📥 JSON', on_click=lambda vm_id=vm.id: export_to_json(vm_id)).props('flat size=sm')
                 
                 # Only show delete if user has permission (admin or creator)
                 if user.is_admin or vm.creator_id == user.id:
-                    ui.button('Delete', on_click=lambda: delete_experiment(vm.id)).props('flat size=sm color=negative')
+                    ui.button('Delete', on_click=lambda vm_id=vm.id: delete_experiment(vm_id)).props('flat size=sm color=negative')
             
             ui.label(vm.robots_display).classes('text-caption text-grey')
-            ui.label(vm.progress_text).classes('text-caption')
+            progress_label = ui.label(vm.progress_text).classes('text-caption')
+            experiment_progress_labels[vm.id] = progress_label
     
-    @ui.refreshable
-    def render_experiments():
-        """Render all experiments - NiceGUI handles smart DOM updates!"""
+    def render_experiments_initial():
+        """Render all experiments ONCE - creates UI elements and stores references."""
         if not experiment_vms:
             ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
             return
         
-        # Group experiments by batch and standalone
-        batch_groups = {}  # {batch_id: {'vms': [vms], 'created_at': datetime, 'batch_name': str, 'creator_name': str}}
-        standalone_vms = []
+        # Render batches first (already sorted in load_data)
+        for batch_vm in batch_group_vms.values():
+            with ui.card().classes('w-full'):
+                with ui.row().classes('w-full items-center gap-2'):
+                    # Track expansion state
+                    is_expanded = batch_expansion_states.get(batch_vm.batch_id, False)
+                    expansion = ui.expansion(
+                        f'📦 Batch #{batch_vm.batch_id}: {batch_vm.batch_name} • By: {batch_vm.creator_name}',
+                        icon='unfold_more',
+                        value=is_expanded
+                    ).classes('flex-grow')
+                    
+                    # Save state when toggled
+                    expansion.on('update:model-value', lambda e, bid=batch_vm.batch_id: batch_expansion_states.update({bid: e.args}))
+                    
+                    with expansion:
+                        # Action buttons at top
+                        with ui.row().classes('gap-2 mb-4'):
+                            ui.button('View Batch Progress', on_click=lambda b=batch_vm.batch_id: ui.navigate.to(f'/batch/{b}')).props('flat size=sm color=primary')
+                            ui.button('📥 Batch CSV', on_click=lambda b=batch_vm.batch_id: download_batch_csv(b)).props('flat size=sm')
+                            ui.button('📥 Batch JSON', on_click=lambda b=batch_vm.batch_id: download_batch_json(b)).props('flat size=sm')
+                        
+                        # Individual experiments in batch
+                        for vm in batch_vm.experiment_vms:
+                            render_experiment_card_from_vm(vm)
+                    
+                    # Status badge outside expansion (pre-computed) - STORE REFERENCE
+                    status_badge = ui.badge(f'{batch_vm.status_icon} {batch_vm.status_text}', color=batch_vm.status_color)
+                    batch_status_badges[batch_vm.batch_id] = status_badge
         
-        for vm in experiment_vms.values():
-            if vm.batch_id:
-                if vm.batch_id not in batch_groups:
-                    batch_groups[vm.batch_id] = {
-                        'vms': [],
-                        'created_at': vm.created_at,
-                        'batch_name': vm.batch_name,
-                        'creator_name': vm.batch_creator_name
-                    }
-                batch_groups[vm.batch_id]['vms'].append(vm)
-            else:
-                standalone_vms.append(vm)
-        
-        # Create combined list sorted by creation time
-        combined_items = []
-        for batch_id, data in batch_groups.items():
-            combined_items.append(('batch', batch_id, data['created_at'], data))
+        # Render standalone experiments (already sorted in load_data)
         for vm in standalone_vms:
-            combined_items.append(('standalone', vm, vm.created_at, None))
-        
-        combined_items.sort(key=lambda x: x[2], reverse=True)
-        
-        # Render in order
-        for item_type, item_data, created_at, extra in combined_items:
-            if item_type == 'batch':
-                batch_id = item_data
-                batch_data = extra
-                batch_vms = batch_data['vms']
-                
-                # Get batch summary from our pre-calculated dict
-                summary = batch_summaries.get(batch_id, {})
-                completed = summary.get('completed', 0)
-                running = summary.get('running', 0)
-                queued = summary.get('queued', 0)
-                failed = summary.get('failed', 0)
-                total = len(batch_vms)
-                
-                # Determine overall batch status
-                if failed > 0:
-                    status_icon, status_color, status_text = '⚠', 'negative', f'{completed}/{total} done, {failed} failed'
-                elif completed == total:
-                    status_icon, status_color, status_text = '✓', 'positive', f'{completed}/{total} complete'
-                elif running > 0:
-                    status_icon, status_color, status_text = '🔄', 'blue', f'{completed}/{total}, {running} running'
-                elif queued > 0:
-                    status_icon, status_color, status_text = '⏳', 'grey', f'{completed}/{total}, {queued} queued'
-                else:
-                    status_icon, status_color, status_text = '📊', 'grey', f'{completed}/{total}'
-                
-                # Batch summary card
-                with ui.card().classes('w-full'):
-                    with ui.row().classes('w-full items-center gap-2'):
-                        # Track expansion state
-                        is_expanded = batch_expansion_states.get(batch_id, False)
-                        expansion = ui.expansion(
-                            f'📦 Batch #{batch_id}: {batch_data["batch_name"]} • By: {batch_data["creator_name"]}',
-                            icon='unfold_more',
-                            value=is_expanded
-                        ).classes('flex-grow')
-                        
-                        # Save state when toggled
-                        expansion.on('update:model-value', lambda e, bid=batch_id: batch_expansion_states.update({bid: e.args}))
-                        
-                        with expansion:
-                            # Action buttons at top
-                            with ui.row().classes('gap-2 mb-4'):
-                                ui.button('View Batch Progress', on_click=lambda b=batch_id: ui.navigate.to(f'/batch/{b}')).props('flat size=sm color=primary')
-                                ui.button('📥 Batch CSV', on_click=lambda b=batch_id: download_batch_csv(b)).props('flat size=sm')
-                                ui.button('📥 Batch JSON', on_click=lambda b=batch_id: download_batch_json(b)).props('flat size=sm')
-                            
-                            # Individual experiments in batch
-                            for vm in batch_vms:
-                                render_experiment_card_from_vm(vm)
-                        
-                        # Status badge outside expansion
-                        ui.badge(f'{status_icon} {status_text}', color=status_color)
-            
-            elif item_type == 'standalone':
-                vm = item_data
-                render_experiment_card_from_vm(vm)
+            render_experiment_card_from_vm(vm)
     
     async def load_data():
         """Load experiments with search filters and pagination."""
@@ -413,31 +372,59 @@ async def experiments_list_page(request: Request):
                 if queue_entry:
                     vm.queue_status = queue_entry.status
                     vm.error_message = queue_entry.error_message if queue_entry.status == 'failed' else None
+                    
+                    # Pre-compute error badge properties (prevents recreation on every refresh)
+                    if vm.error_message:
+                        badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
+                        vm.error_badge_text = badge_text
+                        vm.error_badge_tooltip = tooltip_msg
+                        vm.error_badge_severity = severity
+                    else:
+                        vm.error_badge_text = None
+                        vm.error_badge_tooltip = None
+                        vm.error_badge_severity = None
         
         # Remove VMs for deleted experiments
         for exp_id in list(experiment_vms.keys()):
             if exp_id not in current_exp_ids:
                 del experiment_vms[exp_id]
         
-        # Calculate batch summaries
-        batch_summaries.clear()
+        # PRE-COMPUTE: Group experiments by batch and standalone (OUTSIDE render function)
+        batch_group_vms.clear()
+        standalone_vms.clear()
+        
         for vm in experiment_vms.values():
             if vm.batch_id:
-                if vm.batch_id not in batch_summaries:
-                    batch_summaries[vm.batch_id] = {'completed': 0, 'running': 0, 'queued': 0, 'failed': 0}
-                
-                if vm.queue_status == 'completed':
-                    batch_summaries[vm.batch_id]['completed'] += 1
-                elif vm.queue_status == 'running':
-                    batch_summaries[vm.batch_id]['running'] += 1
-                elif vm.queue_status == 'queued':
-                    batch_summaries[vm.batch_id]['queued'] += 1
-                elif vm.queue_status == 'failed':
-                    batch_summaries[vm.batch_id]['failed'] += 1
+                # Add to batch group
+                if vm.batch_id not in batch_group_vms:
+                    batch_group_vms[vm.batch_id] = BatchGroupViewModel(
+                        batch_id=vm.batch_id,
+                        batch_name=vm.batch_name,
+                        creator_name=vm.batch_creator_name,
+                        created_at=vm.created_at
+                    )
+                batch_group_vms[vm.batch_id].experiment_vms.append(vm)
+            else:
+                # Standalone experiment
+                standalone_vms.append(vm)
+        
+        # PRE-COMPUTE: Update batch summaries and status
+        for batch_vm in batch_group_vms.values():
+            batch_vm.update_summary()
+        
+        # PRE-COMPUTE: Sort standalone experiments by created_at (descending)
+        standalone_vms.sort(key=lambda vm: vm.created_at, reverse=True)
+        
+        # PRE-COMPUTE: Sort batch groups by created_at (descending)
+        # We need to maintain dict order, so recreate dict in sorted order
+        sorted_batch_groups = sorted(batch_group_vms.items(), key=lambda x: x[1].created_at, reverse=True)
+        batch_group_vms.clear()
+        for batch_id, batch_vm in sorted_batch_groups:
+            batch_group_vms[batch_id] = batch_vm
     
-    # Initial load
+    # Initial load and render
     await load_data()
-    render_experiments()
+    render_experiments_initial()
     
     # Pagination controls
     with ui.row().classes('w-full justify-center items-center gap-4 mt-8'):
@@ -479,12 +466,32 @@ async def experiments_list_page(request: Request):
         if current_page >= total_pages:
             next_btn.disable()
     
-    # Auto-refresh every 2 seconds
-    async def refresh_data():
+    # Auto-refresh every 2 seconds - IN-PLACE updates only (no DOM rebuild!)
+    async def update_dynamic_elements():
+        """Update only the dynamic parts (badges, progress) without rebuilding DOM."""
         await load_data()
-        render_experiments.refresh()
+        
+        # Update batch status badges in-place
+        for batch_id, batch_vm in batch_group_vms.items():
+            if batch_id in batch_status_badges:
+                badge = batch_status_badges[batch_id]
+                badge.text = f'{batch_vm.status_icon} {batch_vm.status_text}'
+                badge.props(f'color={batch_vm.status_color}')
+        
+        # Update experiment progress labels and status badges in-place
+        for exp_id, vm in experiment_vms.items():
+            # Update progress text
+            if exp_id in experiment_progress_labels:
+                experiment_progress_labels[exp_id].text = vm.progress_text
+            
+            # Update status badge for batch experiments
+            if exp_id in experiment_status_badges and vm.is_batch:
+                badge = experiment_status_badges[exp_id]
+                if vm.status_badge_text:
+                    badge.text = vm.status_badge_text
+                    badge.props(f'color={vm.status_badge_color}')
     
-    ui.timer(2.0, refresh_data)
+    ui.timer(2.0, update_dynamic_elements)
     
     # Keep existing export functions (they're referenced above)
     async def download_batch_csv(batch_id):
@@ -1202,14 +1209,40 @@ async def chat_page(experiment_id: int):
         
         msg_count_label = ui.label('').classes('text-caption text-grey mt-2')
         
-        # Stats container with proper formatting
-        stats_container = ui.column().classes('w-full gap-1 mt-2')
+        # Initialize stats ViewModel
+        stats_vm = ExperimentStatsViewModel()
         
         # Token usage progress bar
         with ui.row().classes('w-full items-center gap-2 mt-2'):
             ui.label('Context Window:').classes('text-caption')
             token_progress = ui.linear_progress(value=0).classes('flex-grow')
             token_label = ui.label('0 / 0 tokens (0%)').classes('text-caption')
+        
+        # Stats breakdown using @ui.refreshable
+        @ui.refreshable
+        def render_stats_breakdown():
+            """Render stats breakdown - NiceGUI handles smart DOM updates."""
+            # Total (bold)
+            ui.label(stats_vm.total_summary).classes('text-bold text-caption')
+            
+            # Per-robot breakdown
+            if stats_vm.robot_stats:
+                ui.label('Per-Robot Breakdown:').classes('text-caption mt-2')
+                for robot_vm in stats_vm.robot_stats.values():
+                    # Robot name
+                    ui.label(f'• {robot_vm.name} ({robot_vm.provider}/{robot_vm.model})').classes('text-caption ml-4')
+                    
+                    # Tokens
+                    ui.label(f'Tokens: {robot_vm.tokens:,} (in: {robot_vm.input_tokens:,}, out: {robot_vm.output_tokens:,})').classes('text-caption ml-8 text-grey-7')
+                    
+                    # Cost
+                    ui.label(f'Cost: {robot_vm.cost_display}').classes('text-caption ml-8 text-grey-7')
+                    
+                    # Message stats
+                    ui.label(f'{robot_vm.count} messages, avg {robot_vm.avg_tokens:.0f} tokens/msg').classes('text-caption ml-8 text-grey-7')
+        
+        # Initial render
+        render_stats_breakdown()
         
         async def update_stats():
             """Update all statistics including token progress."""
@@ -1220,19 +1253,19 @@ async def chat_page(experiment_id: int):
             robot_b_count = sum(1 for m in messages if m.robot_name == 'robot_b')
             msg_count_label.text = f'{len(messages)} messages ({robot_a_count} from {experiment.robot_a_profile.name}, {robot_b_count} from {experiment.robot_b_profile.name})'
             
-            # Cost and tokens
-            total_cost = sum(m.cost_usd or 0 for m in messages)
-            total_tokens = sum(m.token_count or 0 for m in messages)
-            total_input = sum(m.input_tokens or 0 for m in messages)
-            total_output = sum(m.output_tokens or 0 for m in messages)
+            # Update stats ViewModel
+            stats_vm.total_cost = sum(m.cost_usd or 0 for m in messages)
+            stats_vm.total_tokens = sum(m.token_count or 0 for m in messages)
+            stats_vm.total_input = sum(m.input_tokens or 0 for m in messages)
+            stats_vm.total_output = sum(m.output_tokens or 0 for m in messages)
             
             # Token usage progress (use robot_a's model as reference)
             from src.ai.token_counter import get_model_token_limit
             max_tokens = get_model_token_limit(experiment.robot_a_profile.model_name)
-            token_percentage = min(total_tokens / max_tokens, 1.0) if max_tokens > 0 else 0
+            token_percentage = min(stats_vm.total_tokens / max_tokens, 1.0) if max_tokens > 0 else 0
             
             token_progress.value = token_percentage
-            token_label.text = f'{total_tokens:,} / {max_tokens:,} tokens ({token_percentage*100:.1f}%)'
+            token_label.text = f'{stats_vm.total_tokens:,} / {max_tokens:,} tokens ({token_percentage*100:.1f}%)'
             
             # Color coding for token usage
             if token_percentage > 0.8:
@@ -1242,57 +1275,29 @@ async def chat_page(experiment_id: int):
             else:
                 token_progress.props('color=primary')
             
-            # Per-robot detailed breakdown
-            robot_stats = {}
+            # Update per-robot stats in ViewModel
+            stats_vm.robot_stats.clear()
             for msg in messages:
                 robot_key = msg.robot_name
-                if robot_key not in robot_stats:
+                if robot_key not in stats_vm.robot_stats:
                     robot_profile = (experiment.robot_a_profile if msg.robot_name == 'robot_a' 
                                     else experiment.robot_b_profile)
-                    robot_stats[robot_key] = {
-                        'name': robot_profile.name,
-                        'provider': msg.robot_provider,
-                        'model': msg.model_used,
-                        'tokens': 0,
-                        'input_tokens': 0,
-                        'output_tokens': 0,
-                        'cost': 0,
-                        'count': 0
-                    }
+                    stats_vm.robot_stats[robot_key] = RobotStatsViewModel(
+                        robot_key=robot_key,
+                        name=robot_profile.name,
+                        provider=msg.robot_provider,
+                        model=msg.model_used
+                    )
                 
-                robot_stats[robot_key]['tokens'] += msg.token_count or 0
-                robot_stats[robot_key]['input_tokens'] += msg.input_tokens or 0
-                robot_stats[robot_key]['output_tokens'] += msg.output_tokens or 0
-                robot_stats[robot_key]['cost'] += msg.cost_usd or 0
-                robot_stats[robot_key]['count'] += 1
+                robot_vm = stats_vm.robot_stats[robot_key]
+                robot_vm.tokens += msg.token_count or 0
+                robot_vm.input_tokens += msg.input_tokens or 0
+                robot_vm.output_tokens += msg.output_tokens or 0
+                robot_vm.cost += msg.cost_usd or 0
+                robot_vm.count += 1
             
-            # Clear and rebuild stats display
-            stats_container.clear()
-            
-            with stats_container:
-                # Total (bold)
-                ui.label(f'Total: {total_tokens:,} tokens (in: {total_input:,}, out: {total_output:,}), ${total_cost:.4f}').classes('text-bold text-caption')
-                
-                # Per-robot breakdown
-                if robot_stats:
-                    ui.label('Per-Robot Breakdown:').classes('text-caption mt-2')
-                    for robot_key, stats in robot_stats.items():
-                        avg_tokens = stats['tokens'] / stats['count'] if stats['count'] > 0 else 0
-                        
-                        # Robot name
-                        ui.label(f"• {stats['name']} ({stats['provider']}/{stats['model']})").classes('text-caption ml-4')
-                        
-                        # Tokens
-                        ui.label(f"Tokens: {stats['tokens']:,} (in: {stats['input_tokens']:,}, out: {stats['output_tokens']:,})").classes('text-caption ml-8 text-grey-7')
-                        
-                        # Cost
-                        cost_text = f"Cost: ${stats['cost']:.4f}"
-                        if stats['cost'] == 0:
-                            cost_text += " (free tier)"
-                        ui.label(cost_text).classes('text-caption ml-8 text-grey-7')
-                        
-                        # Message stats
-                        ui.label(f"{stats['count']} messages, avg {avg_tokens:.0f} tokens/msg").classes('text-caption ml-8 text-grey-7')
+            # Refresh stats display
+            render_stats_breakdown.refresh()
         
         # Initial stats
         await update_stats()

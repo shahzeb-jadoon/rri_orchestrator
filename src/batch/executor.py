@@ -7,7 +7,7 @@ in background without UI dependency.
 
 import asyncio
 import signal
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.database import Experiment, ExperimentBatch, ExperimentQueue, RobotProfile
@@ -89,6 +89,19 @@ class BatchExecutor:
     
     async def _process_batch(self, batch: ExperimentBatch):
         """Process a single batch with concurrency control."""
+        # Check if batch is scheduled for future execution
+        if batch.scheduled_start:
+            # PostgreSQL returns timezone-aware datetime, compare with UTC now
+            now_utc = datetime.now(timezone.utc)
+            scheduled_utc = batch.scheduled_start
+            
+            # Ensure both are timezone-aware for comparison
+            if scheduled_utc.tzinfo is None:
+                scheduled_utc = scheduled_utc.replace(tzinfo=timezone.utc)
+            
+            if scheduled_utc > now_utc:
+                return
+        
         # Get queued experiments for this batch
         queued = await ExperimentQueue.filter(
             batch=batch,
@@ -114,7 +127,11 @@ class BatchExecutor:
             batch.status = 'running'
             batch.started_at = datetime.now()
             await batch.save()
-            logger.info(f"Starting batch {batch.id} ({batch.name}): {len(queued)} experiments queued")
+            
+            if batch.scheduled_start:
+                logger.info(f"Starting scheduled batch {batch.id} ({batch.name}): {len(queued)} experiments queued")
+            else:
+                logger.info(f"Starting batch {batch.id} ({batch.name}): {len(queued)} experiments queued")
         
         # Get currently running experiments for this batch
         running = await ExperimentQueue.filter(batch=batch, status='running').count()

@@ -17,6 +17,11 @@ class ExperimentViewModel:
         self.error_message = None
         self.robot_a_name = ''
         self.robot_b_name = ''
+        
+        # Badge display properties (pre-computed to avoid glitching)
+        self.badge_text = None
+        self.badge_tooltip = None
+        self.badge_severity = None
     
     @property
     def expected_messages(self) -> int:
@@ -136,6 +141,11 @@ class ExperimentListViewModel:
         # Queue status (for batch experiments)
         self.queue_status = None  # queued, running, completed, failed
         self.error_message = None
+        
+        # Badge display properties for errors (pre-computed to avoid glitching)
+        self.error_badge_text = None
+        self.error_badge_tooltip = None
+        self.error_badge_severity = None
     
     @property
     def expected_messages(self) -> int:
@@ -233,5 +243,92 @@ class MessageViewModel:
         if self.response_time_ms:
             metadata += f' | Time: {self.response_time_ms}ms'
         return metadata
+
+
+class RobotStatsViewModel:
+    """Per-robot statistics view model."""
+    
+    def __init__(self, robot_key: str, name: str, provider: str, model: str):
+        self.robot_key = robot_key
+        self.name = name
+        self.provider = provider
+        self.model = model
+        self.tokens = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.cost = 0.0
+        self.count = 0
+    
+    @property
+    def avg_tokens(self) -> float:
+        """Calculate average tokens per message."""
+        return self.tokens / self.count if self.count > 0 else 0
+    
+    @property
+    def cost_display(self) -> str:
+        """Get formatted cost display."""
+        cost_text = f'${self.cost:.4f}'
+        if self.cost == 0:
+            cost_text += ' (free tier)'
+        return cost_text
+
+
+class ExperimentStatsViewModel:
+    """Experiment statistics view model for chat page."""
+    
+    def __init__(self):
+        self.total_tokens = 0
+        self.total_input = 0
+        self.total_output = 0
+        self.total_cost = 0.0
+        self.robot_stats = {}  # {robot_key: RobotStatsViewModel}
+    
+    @property
+    def total_summary(self) -> str:
+        """Get formatted total summary."""
+        return f'Total: {self.total_tokens:,} tokens (in: {self.total_input:,}, out: {self.total_output:,}), ${self.total_cost:.4f}'
+
+
+class BatchGroupViewModel:
+    """Batch group view model for experiments list page."""
+    
+    def __init__(self, batch_id: int, batch_name: str, creator_name: str, created_at):
+        self.batch_id = batch_id
+        self.batch_name = batch_name
+        self.creator_name = creator_name
+        self.created_at = created_at
+        self.experiment_vms = []  # List of ExperimentListViewModel
+        
+        # Pre-computed summary stats
+        self.completed = 0
+        self.running = 0
+        self.queued = 0
+        self.failed = 0
+        self.total = 0
+        
+        # Pre-computed status display
+        self.status_icon = '📊'
+        self.status_color = 'grey'
+        self.status_text = '0/0'
+    
+    def update_summary(self):
+        """Update summary statistics and status display."""
+        self.total = len(self.experiment_vms)
+        self.completed = sum(1 for vm in self.experiment_vms if vm.queue_status == 'completed')
+        self.running = sum(1 for vm in self.experiment_vms if vm.queue_status == 'running')
+        self.queued = sum(1 for vm in self.experiment_vms if vm.queue_status == 'queued')
+        self.failed = sum(1 for vm in self.experiment_vms if vm.queue_status == 'failed')
+        
+        # Determine overall batch status
+        if self.failed > 0:
+            self.status_icon, self.status_color, self.status_text = '⚠', 'negative', f'{self.completed}/{self.total} done, {self.failed} failed'
+        elif self.completed == self.total:
+            self.status_icon, self.status_color, self.status_text = '✓', 'positive', f'{self.completed}/{self.total} complete'
+        elif self.running > 0:
+            self.status_icon, self.status_color, self.status_text = '🔄', 'blue', f'{self.completed}/{self.total}, {self.running} running'
+        elif self.queued > 0:
+            self.status_icon, self.status_color, self.status_text = '⏳', 'grey', f'{self.completed}/{self.total}, {self.queued} queued'
+        else:
+            self.status_icon, self.status_color, self.status_text = '📊', 'grey', f'{self.completed}/{self.total}'
 
 
