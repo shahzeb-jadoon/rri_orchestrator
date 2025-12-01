@@ -8,7 +8,7 @@ from nicegui import ui, app
 import asyncio
 from datetime import datetime
 from starlette.requests import Request
-from src.database.models import Experiment, RobotProfile, ChatMessage
+from src.database.models import Experiment, RobotProfile, ChatMessage, ExperimentQueue, ExperimentBatch
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
