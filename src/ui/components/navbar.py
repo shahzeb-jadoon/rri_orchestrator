@@ -25,9 +25,10 @@ async def load_active_users():
     for entry in running_entries:
         if entry.experiment and entry.experiment.created_by:
             user_id = entry.experiment.created_by.id
+            user_name = entry.experiment.created_by.display_name
             if user_id not in user_activity:
                 user_activity[user_id] = {
-                    'user': entry.experiment.created_by,
+                    'name': user_name,
                     'count': 0
                 }
             user_activity[user_id]['count'] += 1
@@ -35,7 +36,7 @@ async def load_active_users():
     # Update ViewModels
     active_users_vms.clear()
     for user_id, data in user_activity.items():
-        vm = ActiveUserViewModel(user_id, data['user'].display_name)
+        vm = ActiveUserViewModel(user_id, data['name'])
         vm.activity = 'running'
         vm.experiment_count = data['count']
         active_users_vms[user_id] = vm
@@ -45,11 +46,10 @@ def create_navbar():
     """Create the navigation bar with active users widget."""
     with ui.header().classes('items-center justify-between'):
         with ui.row().classes('items-center'):
-            ui.label('RRI Orchestrator').classes('text-h6')
+            ui.link('RRI Orchestrator', '/').classes('text-h6 text-white no-underline')
             ui.link('Experiments', '/experiments').classes('text-white')
             ui.link('Robots', '/robots').classes('text-white')
             ui.link('Create Batch', '/batch/create').classes('text-white')
-            ui.link('Deleted', '/experiments/deleted').classes('text-white')
             
             # Check if user is admin
             user_email = app.storage.user.get('user_email')
@@ -108,4 +108,4 @@ def create_navbar():
             render_active_users()
             
             # Logout button
-            ui.link('Logout', '/.auth/logout').classes('text-white')
+            ui.button('Logout', on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/onboarding'))).props('flat color=white')
