@@ -219,6 +219,9 @@ async def experiments_list_page(request: Request):
                         if vm.queue_status == 'failed' and vm.error_message:
                             badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
                             ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+                    # Progress badge for standalone experiments
+                    elif not vm.is_batch:
+                        ui.badge(vm.standalone_progress_text, color=vm.standalone_badge_color).props('outline')
             
             # Action buttons row (with click.stop to prevent card navigation)
             with ui.row().classes('gap-2').on('click.stop'):

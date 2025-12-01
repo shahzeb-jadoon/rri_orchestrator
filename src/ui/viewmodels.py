@@ -193,6 +193,32 @@ class ExperimentListViewModel:
         elif self.queue_status == 'queued':
             return 'grey'
         return 'grey'
+    
+    @property
+    def standalone_progress_text(self) -> str:
+        """Get progress text for standalone experiments."""
+        if self.expected_messages == 0:
+            return f'{self.msg_count} messages'
+        
+        if self.msg_count >= self.expected_messages:
+            return f'✓ {self.msg_count}/{self.expected_messages} complete'
+        elif self.msg_count > 0:
+            return f'📝 {self.msg_count}/{self.expected_messages} in progress'
+        else:
+            return f'⏸ Not started'
+    
+    @property
+    def standalone_badge_color(self) -> str:
+        """Get badge color for standalone experiments based on progress."""
+        if self.expected_messages == 0:
+            return 'grey'
+        
+        if self.msg_count >= self.expected_messages:
+            return 'positive'  # Complete
+        elif self.msg_count > 0:
+            return 'blue'  # In progress
+        else:
+            return 'grey'  # Not started
 
 
 class MessageViewModel:
