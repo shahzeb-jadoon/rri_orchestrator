@@ -123,7 +123,8 @@ async def experiments_list_page(request: Request):
 
     async def render_experiment_card(exp):
         """Helper function to render a single experiment card."""
-        with ui.card().classes('w-full'):
+        # Make card clickable by adding onclick
+        with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all').on('click', lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')):
             with ui.row().classes('w-full items-center justify-between'):
                 with ui.row().classes('items-center gap-2'):
                     ui.label(exp.name).classes('text-h5')
