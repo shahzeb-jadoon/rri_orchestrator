@@ -77,7 +77,8 @@ class BatchExecutor:
         """Process all pending batches and their queued experiments."""
         # Get all batches that have queued work
         batches = await ExperimentBatch.filter(
-            status__in=['pending', 'running']
+            status__in=['pending', 'running'],
+            is_paused=False  # Skip paused batches
         ).prefetch_related('created_by')
         
         for batch in batches:
