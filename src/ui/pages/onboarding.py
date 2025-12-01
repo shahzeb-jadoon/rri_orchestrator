@@ -83,8 +83,9 @@ async def onboarding_page():
         ui.label('Enter your display name:').classes('text-subtitle2 font-bold')
         ui.label('This name will be shown when you create experiments.').classes('text-caption text-grey-6 mb-2')
         
-        display_name_input = ui.input(
-            placeholder='e.g., Shahzeb Jadoon',
+        name_input = ui.input(
+            'Display Name',
+            placeholder='Justin Case',
             validation={
                 'Too short': lambda value: value and len(value.strip()) >= 2,
                 'Required': lambda value: value and len(value.strip()) > 0
