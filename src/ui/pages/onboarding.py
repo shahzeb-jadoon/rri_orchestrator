@@ -66,8 +66,15 @@ async def onboarding_page():
                     ui.button('Request Reactivation', on_click=request_reactivation).props('color=primary').classes('mt-4')
             return
         
-        # User exists and is approved/active - redirect
-        logger.info(f"User {email} already exists and approved, redirecting")
+        # User exists and is approved/active - set session and redirect
+        logger.info(f"User {email} already exists and approved, setting session and redirecting")
+        app.storage.user['current_user'] = {
+            'id': existing.id,
+            'email': existing.email,
+            'display_name': existing.display_name,
+            'role': existing.role,
+            'is_admin': existing.is_admin
+        }
         ui.navigate.to('/experiments')
         return
     

@@ -49,13 +49,14 @@ def create_navbar():
             # Clickable logo that goes to home
             with ui.link(target='/'):
                 ui.label('RRI Orchestrator').classes('text-h6 text-white cursor-pointer')
+            ui.link('Home', '/').classes('text-white')
             ui.link('Experiments', '/experiments').classes('text-white')
             ui.link('Robots', '/robots').classes('text-white')
             ui.link('Create Batch', '/batch/create').classes('text-white')
             
             # Check if user is admin (stored in session)
-            is_admin = app.storage.user.get('is_admin', False)
-            if is_admin:
+            current_user = app.storage.user.get('current_user', {})
+            if current_user.get('is_admin', False):
                 ui.link('Admin', '/admin/users').classes('text-white')
         
         # Active users widget (right side)
@@ -65,9 +66,10 @@ def create_navbar():
                 """Render active users button with dropdown."""
                 count = len(active_users_vms)
                 
-                if count > 0:
-                    with ui.button(f'👥 {count} Active', icon='people').props('flat color=white'):
-                        with ui.menu():
+                # Always show button with menu
+                with ui.button(f'👥 {count} Active').props('flat color=white icon=people'):
+                    with ui.menu():
+                        if count > 0:
                             ui.label('Active Users').classes('text-subtitle2 font-bold px-4 py-2')
                             ui.separator()
                             
@@ -76,8 +78,8 @@ def create_navbar():
                                     with ui.item_section():
                                         ui.item_label(vm.display_name).classes('font-bold')
                                         ui.item_label(f'Running {vm.experiment_count} experiment{"s" if vm.experiment_count != 1 else ""}').classes('text-caption')
-                else:
-                    ui.badge('👥 0 Active', color='grey').props('outline').classes('opacity-60')
+                        else:
+                            ui.label('No active experiments').classes('text-grey px-4 py-2')
             
             # Initial render
             async def initial_load():
