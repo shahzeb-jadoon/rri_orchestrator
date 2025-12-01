@@ -171,9 +171,15 @@ async def export_all_experiments():
 
 
 @ui.page('/experiments')
-async def experiments_list_page():
+async def experiments_list_page(request: Request):
     """List all experiments."""
     create_navbar()
+    
+    # Get current user
+    user = getattr(request.state, 'user', None)
+    if not user:
+        ui.label('Please log in to view experiments').classes('text-negative')
+        return
     
     # Header with export and deleted link
     with ui.row().classes('w-full justify-between items-center'):
