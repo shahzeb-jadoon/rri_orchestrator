@@ -264,10 +264,14 @@ async def experiments_list_page(request: Request):
                 # Batch summary card with expansion
                 with ui.card().classes('w-full'):
                     with ui.row().classes('w-full items-center gap-2'):
-                        with ui.expansion(
-                            f'📦 Batch #{batch_id}: {batch.name} • By: {creator_name}',
-                            icon='view_list'
-                        ).classes('flex-grow'):
+                        # Make batch header clickable to view progress
+                        with ui.link(target=f'/batch/{batch.id}').classes('flex-grow no-underline'):
+                            with ui.row().classes('items-center gap-2 cursor-pointer hover:bg-grey-100 rounded p-2 transition-all'):
+                                ui.icon('view_list', size='sm')
+                                ui.label(f'📦 Batch #{batch_id}: {batch.name} • By: {creator_name}').classes('text-subtitle1')
+                        
+                        # Expansion for experiment details (optional)
+                        with ui.expansion('Show Details', icon='expand_more').classes('flex-shrink-0'):
                             # Action buttons at top
                             with ui.row().classes('gap-2 mb-4'):
                                 ui.button('View Batch Progress', on_click=lambda b=batch: ui.navigate.to(f'/batch/{b.id}')).props('flat size=sm color=primary')

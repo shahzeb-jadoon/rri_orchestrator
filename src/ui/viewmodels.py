@@ -86,6 +86,7 @@ class ActiveUserViewModel:
     def __init__(self, user_id: int, display_name: str):
         self.id = user_id
         self.display_name = display_name
+        self.email = ''  # User email for disambiguation
         self.activity = 'idle'  # idle, viewing, running
         self.experiment_count = 0
         self.current_page = '/'

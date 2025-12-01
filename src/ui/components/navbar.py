@@ -55,28 +55,33 @@ def create_navbar():
             
             # Navigation buttons with icons
             with ui.link(target='/'):
-                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
                     ui.icon('home', size='sm').classes('text-white')
                     ui.label('Home').classes('text-white')
             
             with ui.link(target='/experiments'):
-                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
                     ui.icon('science', size='sm').classes('text-white')
                     ui.label('Experiments').classes('text-white')
             
             with ui.link(target='/robots'):
-                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
                     ui.icon('smart_toy', size='sm').classes('text-white')
                     ui.label('Robots').classes('text-white')
             
             with ui.link(target='/batch/create'):
-                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
                     ui.icon('add_box', size='sm').classes('text-white')
                     ui.label('Create Batch').classes('text-white')
             
             # Check if user is admin (stored in session)
             current_user = app.storage.user.get('current_user', {})
             if current_user.get('is_admin', False):
+                with ui.link(target='/experiments/deleted'):
+                    with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-orange-600 transition-all bg-orange-500'):
+                        ui.icon('delete', size='sm').classes('text-white')
+                        ui.label('Deleted').classes('text-white')
+                
                 with ui.link(target='/admin/users'):
                     with ui.row().classes('items-center gap-1 px-3 py-1 rounded bg-red-600 hover:bg-red-700 transition-all'):
                         ui.icon('admin_panel_settings', size='sm').classes('text-white')
