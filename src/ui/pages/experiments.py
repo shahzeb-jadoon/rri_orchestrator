@@ -231,6 +231,7 @@ async def experiments_list_page(request: Request):
                         # Batch indicator
                         if exp.batch:
                             ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
+                            ui.button('View Batch', on_click=lambda b=exp.batch: ui.navigate.to(f'/batch/{b.id}')).props('flat size=sm color=blue')
                         
                         # Creator badge
                         creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
