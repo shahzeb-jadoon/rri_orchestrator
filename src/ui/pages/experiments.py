@@ -1,117 +1,17 @@
 """
 Experiment management and chat interface.
-
-Setup and monitor robot-robot experiments.
 """
 
 from nicegui import ui, app
 import asyncio
 from datetime import datetime
 from starlette.requests import Request
-from src.database.models import Experiment, RobotProfile, ChatMessage
+from src.database.models import Experiment, RobotProfile, ChatMessage, ExperimentQueue, ExperimentBatch, User
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
-
-
-def get_friendly_error_message(error_text: str) -> tuple[str, str, str]:
-    """
-    Parse technical error message and return user-friendly version.
-    
-    Returns:
-        tuple: (badge_text, tooltip_message, severity_color)
-               severity_color: 'red' (critical), 'orange' (retryable), 'yellow' (warning)
-    """
-    if not error_text:
-        return ('⚠ Failed', 'Experiment failed for unknown reason. Contact administrator.', 'red')
-    
-    error_lower = error_text.lower()
-    
-    # Rate limit errors (most common, retryable)
-    if 'rate' in error_lower and 'limit' in error_lower:
-        if 'gemini' in error_lower:
-            return (
-                '⏸ Rate Limited',
-                '🔄 Gemini API rate limit reached. The batch will automatically retry later. '
-                'No action needed - just wait a few minutes.',
-                'orange'
-            )
-        elif 'openai' in error_lower:
-            return (
-                '⏸ Rate Limited',
-                '🔄 OpenAI API rate limit reached. The batch will automatically retry later. '
-                'No action needed - just wait a few minutes.',
-                'orange'
-            )
-        else:
-            return (
-                '⏸ Rate Limited',
-                '🔄 API rate limit reached. The experiment will retry automatically. '
-                'No action needed - just wait a bit.',
-                'orange'
-            )
-    
-    # Authentication/API key errors (admin action needed)
-    if 'auth' in error_lower or 'api key' in error_lower or 'unauthorized' in error_lower or '401' in error_text:
-        if 'gemini' in error_lower:
-            return (
-                '🔑 Auth Error',
-                '❌ Gemini API key is invalid or missing. Contact admin to update API credentials in settings.',
-                'red'
-            )
-        elif 'openai' in error_lower:
-            return (
-                '🔑 Auth Error',
-                '❌ OpenAI API key is invalid or missing. Contact admin to update API credentials in settings.',
-                'red'
-            )
-        else:
-            return (
-                '🔑 Auth Error',
-                '❌ API authentication failed. Contact admin to check API key configuration.',
-                'red'
-            )
-    
-    # Quota/billing errors (admin action needed)
-    if 'quota' in error_lower or 'billing' in error_lower or 'exceeded' in error_lower:
-        return (
-            '💳 Quota Exceeded',
-            '❌ API quota or billing limit reached. Contact admin to upgrade API plan or check billing.',
-            'red'
-        )
-    
-    # Model not found errors
-    if 'model' in error_lower and ('not found' in error_lower or 'does not exist' in error_lower):
-        return (
-            '🤖 Model Error',
-            '❌ AI model not found or unavailable. Contact admin to check robot profile configuration.',
-            'red'
-        )
-    
-    # Network/timeout errors (retryable)
-    if 'timeout' in error_lower or 'connection' in error_lower or 'network' in error_lower:
-        return (
-            '🌐 Network Error',
-            '🔄 Network connection issue. The batch will retry automatically. '
-            'If this persists, contact admin.',
-            'orange'
-        )
-    
-    # Content policy violations
-    if 'content' in error_lower and ('policy' in error_lower or 'safety' in error_lower or 'filter' in error_lower):
-        return (
-            '⚠ Content Filtered',
-            '⚠️ AI refused to respond due to content policy. Try rephrasing the prompt or contact admin.',
-            'yellow'
-        )
-    
-    # Generic error with partial message
-    error_snippet = error_text[:100] + ('...' if len(error_text) > 100 else '')
-    return (
-        '⚠ Failed',
-        f'❌ Technical error occurred: {error_snippet}\n\nContact admin with experiment ID for details.',
-        'red'
-    )
+from src.ui.utils import get_friendly_error_message
+from src.ui.viewmodels import ExperimentListViewModel, MessageViewModel
 
 
 async def export_all_experiments():
@@ -172,7 +72,7 @@ async def export_all_experiments():
 
 @ui.page('/experiments')
 async def experiments_list_page(request: Request):
-    """List all experiments."""
+    """List all experiments with search, pagination, and auto-refresh."""
     create_navbar()
     
     # Get current user
@@ -180,6 +80,19 @@ async def experiments_list_page(request: Request):
     if not user:
         ui.label('Please log in to view experiments').classes('text-negative')
         return
+    
+    # Extract query parameters
+    params = request.query_params
+    current_page = int(params.get('page', 1))
+    page_size = 25
+    
+    # Search filters
+    search_name = params.get('name', '')
+    search_creator = params.get('creator', '')
+    search_from = params.get('from', '')
+    search_to = params.get('to', '')
+    search_batch = params.get('batch', 'all')
+    search_status = params.get('status', 'all')
     
     # Header with export and deleted link
     with ui.row().classes('w-full justify-between items-center'):
@@ -197,10 +110,75 @@ async def experiments_list_page(request: Request):
     
     ui.space()
     
-    # Load only non-deleted experiments
-    experiments = await Experiment.filter(
-        deleted_at__isnull=True
-    ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
+    # Search panel
+    with ui.expansion('🔍 Search & Filter', icon='search').classes('w-full') as search_panel:
+        with ui.grid(columns=3).classes('w-full gap-4'):
+            # Name search
+            name_input = ui.input('Experiment Name', value=search_name).classes('w-full')
+            
+            # Creator filter
+            all_users = await User.all().order_by('display_name')
+            creator_options = {'': 'All Creators'} | {str(u.id): u.display_name for u in all_users}
+            creator_select = ui.select(creator_options, label='Creator', value=search_creator).classes('w-full')
+            
+            # Batch filter
+            batch_select = ui.select({
+                'all': 'All Experiments',
+                'batches': 'Batch Only',
+                'standalone': 'Standalone Only'
+            }, label='Type', value=search_batch).classes('w-full')
+            
+            # Date from
+            from_input = ui.input('From Date', value=search_from).classes('w-full')
+            from_input.props('type=date')
+            
+            # Date to
+            to_input = ui.input('To Date', value=search_to).classes('w-full')
+            to_input.props('type=date')
+            
+            # Status filter
+            status_select = ui.select({
+                'all': 'All Status',
+                'running': 'Running',
+                'completed': 'Completed',
+                'failed': 'Failed',
+                'queued': 'Queued'
+            }, label='Status', value=search_status).classes('w-full')
+        
+        # Search buttons
+        with ui.row().classes('gap-2 mt-4'):
+            def apply_search():
+                url_parts = ['/experiments?']
+                if name_input.value:
+                    url_parts.append(f'name={name_input.value}&')
+                if creator_select.value:
+                    url_parts.append(f'creator={creator_select.value}&')
+                if from_input.value:
+                    url_parts.append(f'from={from_input.value}&')
+                if to_input.value:
+                    url_parts.append(f'to={to_input.value}&')
+                if batch_select.value != 'all':
+                    url_parts.append(f'batch={batch_select.value}&')
+                if status_select.value != 'all':
+                    url_parts.append(f'status={status_select.value}&')
+                
+                url = ''.join(url_parts).rstrip('&?')
+                ui.navigate.to(url or '/experiments')
+            
+            def clear_search():
+                ui.navigate.to('/experiments')
+            
+            ui.button('Search', on_click=apply_search, icon='search').props('color=primary')
+            ui.button('Clear', on_click=clear_search, icon='clear').props('flat')
+    
+    ui.space()
+    
+    # ViewModels storage
+    experiment_vms = {}  # {experiment_id: ExperimentListViewModel}
+    batch_summaries = {}  # {batch_id: {'completed': 0, 'running': 0, ...}}
+    batch_expansion_states = {}  # {batch_id: True/False} - track which batches are expanded
+    total_experiments = 0
+    total_pages = 1
     
     async def delete_experiment(exp_id: int):
         """Soft delete experiment with permission check."""
@@ -217,79 +195,394 @@ async def experiments_list_page(request: Request):
         await exp.save()
         
         ui.notify('Experiment moved to trash', type='positive')
-        ui.navigate.to('/experiments')
-
-    if not experiments:
-        ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
-    else:
-        for exp in experiments:
-            with ui.card().classes('w-full'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.label(exp.name).classes('text-h5')
-                        
-                        # Batch indicator
-                        if exp.batch:
-                            ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
-                        
-                        # Creator badge
-                        creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
-                        ui.badge(f'By: {creator_name}', color='grey').props('outline')
-                        
-                        # Check completion status for batch experiments
-                        if exp.batch:
-                            msg_count = await ChatMessage.filter(experiment=exp).count()
-                            expected_messages = exp.max_turns * 2
-                            
-                            if msg_count >= expected_messages:
-                                ui.badge('✓ Complete', color='green')
-                            elif msg_count > 0:
-                                # Check queue status for more detail
-                                from src.database import ExperimentQueue
-                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
-                                if queue_entry:
-                                    if queue_entry.status == 'failed':
-                                        # Parse error for user-friendly message
-                                        badge_text, tooltip_msg, severity = get_friendly_error_message(queue_entry.error_message or '')
-                                        
-                                        # Show badge with message count
-                                        ui.badge(f'{badge_text} ({msg_count}/{expected_messages})', color=severity).props('outline')
-                                        
-                                        # Add info icon with helpful tooltip
-                                        ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
-                                        
-                                    elif queue_entry.status == 'running':
-                                        ui.badge(f'🔄 Running ({msg_count}/{expected_messages})', color='blue')
-                                    else:
-                                        ui.badge(f'Partial ({msg_count}/{expected_messages})', color='orange').props('outline')
-                            else:
-                                # No messages yet
-                                from src.database import ExperimentQueue
-                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
-                                if queue_entry and queue_entry.status == 'queued':
-                                    ui.badge('⏳ Queued', color='grey').props('outline')
+        # Trigger refresh
+        await load_data()
+        render_experiments.refresh()
+    
+    def render_experiment_card_from_vm(vm: ExperimentListViewModel):
+        """Render a single experiment card from ViewModel."""
+        # Make card clickable
+        with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all').on('click', lambda: ui.navigate.to(f'/experiments/{vm.id}')):
+            with ui.row().classes('w-full items-center justify-between'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.label(vm.name).classes('text-h5')
                     
-                    with ui.row().classes('gap-2'):
-                        ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
-                        ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
-                        ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
-                        
-                        # Only show delete if user has permission (admin or creator)
-                        if user.is_admin or exp.created_by_id == user.id:
-                            ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
+                    # Creator badge (for standalone only)
+                    if not vm.is_batch:
+                        ui.badge(f'By: {vm.creator_name}', color='grey').props('outline')
                 
-                ui.label(
-                    f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
-                    f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
-                ).classes('text-caption text-grey')
+                # Status badges and action buttons
+                with ui.row().classes('gap-2'):
+                    # Status for batch experiments
+                    if vm.is_batch and vm.status_badge_text:
+                        ui.badge(vm.status_badge_text, color=vm.status_badge_color).props('outline')
+                        if vm.queue_status == 'failed' and vm.error_message:
+                            badge_text, tooltip_msg, severity = get_friendly_error_message(vm.error_message)
+                            ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
+            
+            # Action buttons row (with click.stop to prevent card navigation)
+            with ui.row().classes('gap-2').on('click.stop'):
+                ui.button('View', on_click=lambda: ui.navigate.to(f'/experiments/{vm.id}')).props('flat size=sm')
+                ui.button('📥 CSV', on_click=lambda: export_to_csv(vm.id)).props('flat size=sm')
+                ui.button('📥 JSON', on_click=lambda: export_to_json(vm.id)).props('flat size=sm')
                 
-                # Stats
-                msg_count = await ChatMessage.filter(experiment=exp).count()
-                if exp.batch:
-                    expected = exp.max_turns * 2
-                    ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
+                # Only show delete if user has permission (admin or creator)
+                if user.is_admin or vm.creator_id == user.id:
+                    ui.button('Delete', on_click=lambda: delete_experiment(vm.id)).props('flat size=sm color=negative')
+            
+            ui.label(vm.robots_display).classes('text-caption text-grey')
+            ui.label(vm.progress_text).classes('text-caption')
+    
+    @ui.refreshable
+    def render_experiments():
+        """Render all experiments - NiceGUI handles smart DOM updates!"""
+        if not experiment_vms:
+            ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
+            return
+        
+        # Group experiments by batch and standalone
+        batch_groups = {}  # {batch_id: {'vms': [vms], 'created_at': datetime, 'batch_name': str, 'creator_name': str}}
+        standalone_vms = []
+        
+        for vm in experiment_vms.values():
+            if vm.batch_id:
+                if vm.batch_id not in batch_groups:
+                    batch_groups[vm.batch_id] = {
+                        'vms': [],
+                        'created_at': vm.created_at,
+                        'batch_name': vm.batch_name,
+                        'creator_name': vm.batch_creator_name
+                    }
+                batch_groups[vm.batch_id]['vms'].append(vm)
+            else:
+                standalone_vms.append(vm)
+        
+        # Create combined list sorted by creation time
+        combined_items = []
+        for batch_id, data in batch_groups.items():
+            combined_items.append(('batch', batch_id, data['created_at'], data))
+        for vm in standalone_vms:
+            combined_items.append(('standalone', vm, vm.created_at, None))
+        
+        combined_items.sort(key=lambda x: x[2], reverse=True)
+        
+        # Render in order
+        for item_type, item_data, created_at, extra in combined_items:
+            if item_type == 'batch':
+                batch_id = item_data
+                batch_data = extra
+                batch_vms = batch_data['vms']
+                
+                # Get batch summary from our pre-calculated dict
+                summary = batch_summaries.get(batch_id, {})
+                completed = summary.get('completed', 0)
+                running = summary.get('running', 0)
+                queued = summary.get('queued', 0)
+                failed = summary.get('failed', 0)
+                total = len(batch_vms)
+                
+                # Determine overall batch status
+                if failed > 0:
+                    status_icon, status_color, status_text = '⚠', 'negative', f'{completed}/{total} done, {failed} failed'
+                elif completed == total:
+                    status_icon, status_color, status_text = '✓', 'positive', f'{completed}/{total} complete'
+                elif running > 0:
+                    status_icon, status_color, status_text = '🔄', 'blue', f'{completed}/{total}, {running} running'
+                elif queued > 0:
+                    status_icon, status_color, status_text = '⏳', 'grey', f'{completed}/{total}, {queued} queued'
                 else:
-                    ui.label(f'{msg_count} messages').classes('text-caption')
+                    status_icon, status_color, status_text = '📊', 'grey', f'{completed}/{total}'
+                
+                # Batch summary card
+                with ui.card().classes('w-full'):
+                    with ui.row().classes('w-full items-center gap-2'):
+                        # Track expansion state
+                        is_expanded = batch_expansion_states.get(batch_id, False)
+                        expansion = ui.expansion(
+                            f'📦 Batch #{batch_id}: {batch_data["batch_name"]} • By: {batch_data["creator_name"]}',
+                            icon='unfold_more',
+                            value=is_expanded
+                        ).classes('flex-grow')
+                        
+                        # Save state when toggled
+                        expansion.on('update:model-value', lambda e, bid=batch_id: batch_expansion_states.update({bid: e.args}))
+                        
+                        with expansion:
+                            # Action buttons at top
+                            with ui.row().classes('gap-2 mb-4'):
+                                ui.button('View Batch Progress', on_click=lambda b=batch_id: ui.navigate.to(f'/batch/{b}')).props('flat size=sm color=primary')
+                                ui.button('📥 Batch CSV', on_click=lambda b=batch_id: download_batch_csv(b)).props('flat size=sm')
+                                ui.button('📥 Batch JSON', on_click=lambda b=batch_id: download_batch_json(b)).props('flat size=sm')
+                            
+                            # Individual experiments in batch
+                            for vm in batch_vms:
+                                render_experiment_card_from_vm(vm)
+                        
+                        # Status badge outside expansion
+                        ui.badge(f'{status_icon} {status_text}', color=status_color)
+            
+            elif item_type == 'standalone':
+                vm = item_data
+                render_experiment_card_from_vm(vm)
+    
+    async def load_data():
+        """Load experiments with search filters and pagination."""
+        nonlocal total_experiments, total_pages
+        
+        # Build query with filters
+        query = Experiment.filter(deleted_at__isnull=True)
+        
+        # Apply search filters
+        if search_name:
+            query = query.filter(name__icontains=search_name)
+        
+        if search_creator:
+            query = query.filter(created_by_id=int(search_creator))
+        
+        if search_from:
+            from datetime import datetime
+            from_date = datetime.strptime(search_from, '%Y-%m-%d')
+            query = query.filter(created_at__gte=from_date)
+        
+        if search_to:
+            from datetime import datetime
+            to_date = datetime.strptime(search_to, '%Y-%m-%d')
+            # Add 1 day to include the entire "to" date
+            from datetime import timedelta
+            to_date = to_date + timedelta(days=1)
+            query = query.filter(created_at__lt=to_date)
+        
+        if search_batch == 'batches':
+            query = query.filter(batch_id__isnull=False)
+        elif search_batch == 'standalone':
+            query = query.filter(batch_id__isnull=True)
+        
+        if search_status != 'all':
+            # Get experiment IDs with matching status from queue
+            queue_ids = await ExperimentQueue.filter(status=search_status).values_list('experiment_id', flat=True)
+            query = query.filter(id__in=list(queue_ids))
+        
+        # Count total for pagination
+        total_experiments = await query.count()
+        total_pages = max(1, (total_experiments + page_size - 1) // page_size)
+        
+        # Apply pagination
+        offset = (current_page - 1) * page_size
+        experiments = await query.offset(offset).limit(page_size).prefetch_related(
+            'created_by', 'robot_a_profile', 'robot_b_profile', 'batch', 'batch__created_by'
+        ).order_by('-created_at')
+        
+        # Track which VMs to keep
+        current_exp_ids = set()
+        
+        # Update/create ViewModels
+        for exp in experiments:
+            current_exp_ids.add(exp.id)
+            
+            if exp.id not in experiment_vms:
+                # Create new ViewModel
+                vm = ExperimentListViewModel(exp.id, exp.name)
+                experiment_vms[exp.id] = vm
+            else:
+                # Use existing ViewModel
+                vm = experiment_vms[exp.id]
+            
+            # Update ViewModel data
+            vm.max_turns = exp.max_turns
+            vm.created_at = exp.created_at
+            
+            vm.robot_a_name = exp.robot_a_profile.name
+            vm.robot_a_model = exp.robot_a_profile.model_name
+            vm.robot_b_name = exp.robot_b_profile.name
+            vm.robot_b_model = exp.robot_b_profile.model_name
+            
+            vm.creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
+            vm.creator_id = exp.created_by_id
+            
+            vm.batch_id = exp.batch_id
+            if exp.batch:
+                vm.batch_name = exp.batch.name
+                vm.batch_creator_name = exp.batch.created_by.display_name if exp.batch.created_by else (exp.batch.created_by_name or 'Unknown')
+            
+            # Get message count
+            vm.msg_count = await ChatMessage.filter(experiment=exp).count()
+            
+            # Get queue status for batch experiments
+            if exp.batch_id:
+                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                if queue_entry:
+                    vm.queue_status = queue_entry.status
+                    vm.error_message = queue_entry.error_message if queue_entry.status == 'failed' else None
+        
+        # Remove VMs for deleted experiments
+        for exp_id in list(experiment_vms.keys()):
+            if exp_id not in current_exp_ids:
+                del experiment_vms[exp_id]
+        
+        # Calculate batch summaries
+        batch_summaries.clear()
+        for vm in experiment_vms.values():
+            if vm.batch_id:
+                if vm.batch_id not in batch_summaries:
+                    batch_summaries[vm.batch_id] = {'completed': 0, 'running': 0, 'queued': 0, 'failed': 0}
+                
+                if vm.queue_status == 'completed':
+                    batch_summaries[vm.batch_id]['completed'] += 1
+                elif vm.queue_status == 'running':
+                    batch_summaries[vm.batch_id]['running'] += 1
+                elif vm.queue_status == 'queued':
+                    batch_summaries[vm.batch_id]['queued'] += 1
+                elif vm.queue_status == 'failed':
+                    batch_summaries[vm.batch_id]['failed'] += 1
+    
+    # Initial load
+    await load_data()
+    render_experiments()
+    
+    # Pagination controls
+    with ui.row().classes('w-full justify-center items-center gap-4 mt-8'):
+        def build_page_url(page):
+            """Build URL with current filters and new page number."""
+            url_parts = [f'/experiments?page={page}']
+            if search_name:
+                url_parts.append(f'&name={search_name}')
+            if search_creator:
+                url_parts.append(f'&creator={search_creator}')
+            if search_from:
+                url_parts.append(f'&from={search_from}')
+            if search_to:
+                url_parts.append(f'&to={search_to}')
+            if search_batch != 'all':
+                url_parts.append(f'&batch={search_batch}')
+            if search_status != 'all':
+                url_parts.append(f'&status={search_status}')
+            return ''.join(url_parts)
+        
+        # Previous button
+        prev_btn = ui.button('← Previous', on_click=lambda: ui.navigate.to(build_page_url(current_page - 1)))
+        prev_btn.props('flat color=primary')
+        if current_page <= 1:
+            prev_btn.disable()
+        
+        # Page info
+        ui.label(f'Page {current_page} of {total_pages} • {total_experiments} experiments').classes('text-body1')
+        
+        # Page jumper
+        with ui.row().classes('items-center gap-2'):
+            page_input = ui.input('Go to page').props('type=number min=1').classes('w-20')
+            page_input.value = str(current_page)
+            ui.button('Go', on_click=lambda: ui.navigate.to(build_page_url(int(page_input.value) if page_input.value else 1))).props('flat size=sm')
+        
+        # Next button
+        next_btn = ui.button('Next →', on_click=lambda: ui.navigate.to(build_page_url(current_page + 1)))
+        next_btn.props('flat color=primary')
+        if current_page >= total_pages:
+            next_btn.disable()
+    
+    # Auto-refresh every 2 seconds
+    async def refresh_data():
+        await load_data()
+        render_experiments.refresh()
+    
+    ui.timer(2.0, refresh_data)
+    
+    # Keep existing export functions (they're referenced above)
+    async def download_batch_csv(batch_id):
+        """Export all experiments in batch to combined CSV."""
+        import csv
+        import io
+        
+        batch_obj = await ExperimentBatch.get(id=batch_id).prefetch_related('created_by')
+        batch_experiments = await Experiment.filter(batch_id=batch_id).prefetch_related(
+            'robot_a_profile', 'robot_b_profile', 'created_by'
+        )
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header
+        writer.writerow(['Batch Name', 'Batch ID', 'Experiment Name', 'Experiment ID', 
+                       'Robot A', 'Robot B', 'Max Turns', 'Messages', 'Status', 'Creator'])
+        
+        # Data
+        for exp in batch_experiments:
+            msg_count = await ChatMessage.filter(experiment=exp).count()
+            queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+            status = queue_entry.status if queue_entry else 'unknown'
+            creator = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
+            
+            writer.writerow([
+                batch_obj.name,
+                batch_id,
+                exp.name,
+                exp.id,
+                exp.robot_a_profile.name,
+                exp.robot_b_profile.name,
+                exp.max_turns,
+                msg_count,
+                status,
+                creator
+            ])
+        
+        # Download
+        csv_data = output.getvalue()
+        ui.download(csv_data.encode(), f'batch_{batch_id}_{batch_obj.name}.csv')
+    
+    async def download_batch_json(batch_id):
+        """Export all experiments in batch to combined JSON."""
+        import json
+        
+        batch_obj = await ExperimentBatch.get(id=batch_id).prefetch_related('created_by')
+        batch_experiments = await Experiment.filter(batch_id=batch_id).prefetch_related(
+            'robot_a_profile', 'robot_b_profile', 'created_by'
+        )
+        
+        batch_data = {
+            'batch_id': batch_id,
+            'batch_name': batch_obj.name,
+            'created_by': batch_obj.created_by.display_name if batch_obj.created_by else (batch_obj.created_by_name or 'Unknown'),
+            'created_at': batch_obj.created_at.isoformat() if batch_obj.created_at else None,
+            'total_experiments': len(batch_experiments),
+            'experiments': []
+        }
+        
+        for exp in batch_experiments:
+            messages = await ChatMessage.filter(experiment=exp).order_by('created_at')
+            queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+            
+            exp_data = {
+                'id': exp.id,
+                'name': exp.name,
+                'description': exp.description,
+                'robot_a': {
+                    'name': exp.robot_a_profile.name,
+                    'provider': exp.robot_a_profile.ai_provider,
+                    'model': exp.robot_a_profile.model_name
+                },
+                'robot_b': {
+                    'name': exp.robot_b_profile.name,
+                    'provider': exp.robot_b_profile.ai_provider,
+                    'model': exp.robot_b_profile.model_name
+                },
+                'max_turns': exp.max_turns,
+                'status': queue_entry.status if queue_entry else 'unknown',
+                'messages': [
+                    {
+                        'robot_name': msg.robot_name,
+                        'content': msg.content,
+                        'timestamp': msg.created_at.isoformat(),
+                        'tokens': msg.token_count,
+                        'cost_usd': float(msg.cost_usd) if msg.cost_usd else 0
+                    }
+                    for msg in messages
+                ]
+            }
+            batch_data['experiments'].append(exp_data)
+        
+        # Download
+        json_str = json.dumps(batch_data, indent=2)
+        ui.download(json_str.encode(), f'batch_{batch_id}_{batch_obj.name}.json')
 
 
 @ui.page('/experiments/create')
@@ -589,41 +882,55 @@ async def chat_page(experiment_id: int):
     
     ui.separator()
     
-    # Chat display area
-    chat_container = ui.column().classes('w-full max-w-4xl gap-2')
+    # Store message ViewModels
+    message_vms = {}
     
-    # Load and display messages
-    @ui.refreshable
-    async def display_messages():
+    async def load_messages():
+        """Load messages from database into ViewModels."""
         messages = await ChatMessage.filter(experiment=experiment).order_by('created_at')
         
-        chat_container.clear()
+        # Only add new messages, don't clear existing ones
+        existing_ids = set(message_vms.keys())
+        new_ids = set(msg.id for msg in messages)
         
-        with chat_container:
-            if not messages:
-                ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
-            else:
-                for msg in messages:
-                    # Determine robot and color
-                    is_robot_a = msg.robot_name == 'robot_a'
-                    robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
-                    card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
-                    
-                    with ui.card().classes(f'w-full {card_color}'):
-                        ui.label(f'🤖 {robot_name}').classes('text-bold')
-                        ui.label(msg.content).classes('text-body1 whitespace-pre-wrap')
-                        
-                        # Metadata
-                        metadata = f'Model: {msg.model_used} | Tokens: {msg.token_count}'
-                        if msg.input_tokens and msg.output_tokens:
-                            metadata += f' (in: {msg.input_tokens}, out: {msg.output_tokens})'
-                        if msg.cost_usd:
-                            metadata += f' | Cost: ${msg.cost_usd:.4f}'
-                        if msg.response_time_ms:
-                            metadata += f' | Time: {msg.response_time_ms}ms'
-                        
-                        ui.label(metadata).classes('text-caption text-grey')
+        # Remove deleted messages (shouldn't happen but just in case)
+        for msg_id in existing_ids - new_ids:
+            del message_vms[msg_id]
+        
+        # Add new messages
+        for msg in messages:
+            if msg.id not in message_vms:
+                message_vms[msg.id] = MessageViewModel(
+                    msg_id=msg.id,
+                    content=msg.content,
+                    robot_name=msg.robot_name,
+                    model_used=msg.model_used,
+                    token_count=msg.token_count,
+                    input_tokens=msg.input_tokens,
+                    output_tokens=msg.output_tokens,
+                    cost_usd=msg.cost_usd,
+                    response_time_ms=msg.response_time_ms,
+                    created_at=str(msg.created_at)
+                )
     
+    # Chat display - NiceGUI @ui.refreshable handles smart DOM updates
+    @ui.refreshable
+    async def display_messages():
+        if not message_vms:
+            ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
+        else:
+            for vm in message_vms.values():
+                # Determine robot and color
+                is_robot_a = vm.robot_name == 'robot_a'
+                robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
+                card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
+                
+                with ui.card().classes(f'w-full {card_color}'):
+                    ui.label(f'🤖 {robot_name}').classes('text-bold')
+                    ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
+                    ui.label(vm.metadata_text).classes('text-caption text-grey')
+    
+    await load_messages()
     await display_messages()
     
     # State management
@@ -787,6 +1094,7 @@ async def chat_page(experiment_id: int):
                         initial_prompt=prompt
                     )
                     
+                    await load_messages()
                     await display_messages.refresh()
                     await update_stats()
                     await show_initial_prompt.refresh()

@@ -290,6 +290,16 @@ class ExperimentBatch(Model):
     experiments_completed = fields.IntField(default=0)
     experiments_failed = fields.IntField(default=0)
     
+    # Batch controls
+    is_paused = fields.BooleanField(default=False)
+    paused_at = fields.DatetimeField(null=True)
+    paused_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="paused_batches",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    
     # Relationships
     experiments: fields.ReverseRelation["Experiment"]
     

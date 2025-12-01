@@ -66,8 +66,15 @@ async def onboarding_page():
                     ui.button('Request Reactivation', on_click=request_reactivation).props('color=primary').classes('mt-4')
             return
         
-        # User exists and is approved/active - redirect
-        logger.info(f"User {email} already exists and approved, redirecting")
+        # User exists and is approved/active - set session and redirect
+        logger.info(f"User {email} already exists and approved, setting session and redirecting")
+        app.storage.user['current_user'] = {
+            'id': existing.id,
+            'email': existing.email,
+            'display_name': existing.display_name,
+            'role': existing.role,
+            'is_admin': existing.is_admin
+        }
         ui.navigate.to('/experiments')
         return
     
@@ -83,8 +90,9 @@ async def onboarding_page():
         ui.label('Enter your display name:').classes('text-subtitle2 font-bold')
         ui.label('This name will be shown when you create experiments.').classes('text-caption text-grey-6 mb-2')
         
-        display_name_input = ui.input(
-            placeholder='e.g., Shahzeb Jadoon',
+        name_input = ui.input(
+            'Display Name',
+            placeholder='Justin Case',
             validation={
                 'Too short': lambda value: value and len(value.strip()) >= 2,
                 'Required': lambda value: value and len(value.strip()) > 0

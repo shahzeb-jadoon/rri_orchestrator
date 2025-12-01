@@ -1,33 +1,149 @@
 """
-Navigation bar component for RRI Orchestrator.
+Shared navigation bar component.
 """
 
 from nicegui import ui, app
-from src.database import get_database_status
+from datetime import datetime, timedelta
+from src.database.models import ExperimentQueue, User, Experiment, ChatMessage
+from src.ui.viewmodels import ActiveUserViewModel
+
+
+# Global state for active users (persists across page loads)
+active_users_vms = {}  # {user_id: ActiveUserViewModel}
+
+
+async def load_active_users():
+    """Update active users by checking for experiments with recent messages."""
+    global active_users_vms
+    
+    # Define "active" as having a message in the last 60 seconds
+    activity_threshold = datetime.now() - timedelta(seconds=60)
+    
+    # Find experiments with recent messages
+    recent_messages = await ChatMessage.filter(
+        created_at__gte=activity_threshold
+    ).prefetch_related('experiment', 'experiment__created_by').distinct()
+    
+    # Track which experiments are active
+    active_experiment_ids = set()
+    for msg in recent_messages:
+        if msg.experiment:
+            active_experiment_ids.add(msg.experiment.id)
+    
+    # Get the active experiments with user info
+    if active_experiment_ids:
+        active_experiments = await Experiment.filter(
+            id__in=list(active_experiment_ids),
+            deleted_at__isnull=True
+        ).prefetch_related('created_by')
+    else:
+        active_experiments = []
+    
+    # Count experiments per user
+    user_activity = {}
+    for exp in active_experiments:
+        if exp.created_by:
+            user_id = exp.created_by.id
+            user_name = exp.created_by.display_name
+            user_email = exp.created_by.email
+            
+            if user_id not in user_activity:
+                user_activity[user_id] = {
+                    'name': user_name,
+                    'email': user_email,
+                    'count': 0
+                }
+            user_activity[user_id]['count'] += 1
+    
+    # Update ViewModels
+    active_users_vms.clear()
+    for user_id, data in user_activity.items():
+        vm = ActiveUserViewModel(user_id, data['name'])
+        vm.activity = 'running'
+        vm.experiment_count = data['count']
+        vm.email = data['email']  # Store email for display
+        active_users_vms[user_id] = vm
 
 
 def create_navbar():
-    """Create navigation bar with links and DB status."""
+    """Create the navigation bar with active users widget."""
     with ui.header().classes('items-center justify-between'):
-        with ui.row().classes('items-center'):
-            ui.label('🤖 RRI Orchestrator').classes('text-h5 text-white')
+        with ui.row().classes('items-center gap-1'):
+            # Clickable logo that goes to home
+            with ui.link(target='/'):
+                ui.label('RRI Orchestrator').classes('text-h6 text-white cursor-pointer font-bold')
+            
+            # Navigation buttons with icons
+            with ui.link(target='/'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
+                    ui.icon('home', size='sm').classes('text-white')
+                    ui.label('Home').classes('text-white')
+            
+            with ui.link(target='/experiments'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
+                    ui.icon('science', size='sm').classes('text-white')
+                    ui.label('Experiments').classes('text-white')
+            
+            with ui.link(target='/robots'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
+                    ui.icon('smart_toy', size='sm').classes('text-white')
+                    ui.label('Robots').classes('text-white')
+            
+            with ui.link(target='/batch/create'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-blue-500 transition-all'):
+                    ui.icon('add_box', size='sm').classes('text-white')
+                    ui.label('Create Batch').classes('text-white')
+            
+            # Check if user is admin (stored in session)
+            current_user = app.storage.user.get('current_user', {})
+            if current_user.get('is_admin', False):
+                with ui.link(target='/experiments/deleted'):
+                    with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-opacity-20 hover:bg-orange-600 transition-all bg-orange-500'):
+                        ui.icon('delete', size='sm').classes('text-white')
+                        ui.label('Deleted').classes('text-white')
+                
+                with ui.link(target='/admin/users'):
+                    with ui.row().classes('items-center gap-1 px-3 py-1 rounded bg-red-600 hover:bg-red-700 transition-all'):
+                        ui.icon('admin_panel_settings', size='sm').classes('text-white')
+                        ui.label('Admin').classes('text-white font-bold')
         
-        with ui.row().classes('items-center gap-4'):
-            ui.link('Home', '/').classes('text-white')
-            ui.link('Robots', '/robots').classes('text-white')
-            ui.link('Experiments', '/experiments').classes('text-white')
-            ui.link('Create Batch', '/batch/create').classes('text-white font-bold')
+        # Active users widget (right side)
+        with ui.row().classes('items-center gap-2'):
+            # Button with menu - only menu content refreshes on timer
+            active_btn = ui.button(f'👥 {len(active_users_vms)} Active', icon='people').props('flat color=white')
             
-            # Admin link - only show to admins
-            current_user = app.storage.user.get('current_user')
-            if current_user and current_user.get('is_admin'):
-                ui.link('👑 Admin', '/admin/users').classes('text-white bg-red-600 px-2 py-1 rounded')
+            with active_btn:
+                with ui.menu():
+                    @ui.refreshable
+                    def render_menu_content():
+                        """Render menu content without recreating the menu."""
+                        count = len(active_users_vms)
+                        
+                        if count > 0:
+                            ui.label('Active Users').classes('text-subtitle2 font-bold px-4 py-2')
+                            ui.separator()
+                            
+                            for vm in active_users_vms.values():
+                                with ui.item():
+                                    with ui.item_section():
+                                        ui.item_label(vm.display_name).classes('font-bold')
+                                        ui.item_label(vm.email).classes('text-caption text-grey')
+                                        # Show experiment type
+                                        exp_text = f'Running {vm.experiment_count} experiment{"s" if vm.experiment_count != 1 else ""}'
+                                        ui.item_label(exp_text).classes('text-caption')
+                        else:
+                            ui.label('No active experiments').classes('text-grey px-4 py-2')
+                    
+                    render_menu_content()
             
-            # Database status indicator
-            async def show_status():
-                status = await get_database_status()
-                icon = '✓' if status['connected'] else '✗'
-                color = 'green' if status['connected'] else 'red'
-                ui.label(f'{icon} DB').classes(f'text-{color}')
+            # Update data and refresh
+            async def refresh_users():
+                await load_active_users()
+                active_btn.text = f'👥 {len(active_users_vms)} Active'
+                render_menu_content.refresh()
             
-            ui.timer(5.0, show_status, once=True)
+            # Initial load
+            ui.timer(0.1, refresh_users, once=True)
+            
+            # Auto-refresh every 1 second
+            ui.timer(1.0, refresh_users)
