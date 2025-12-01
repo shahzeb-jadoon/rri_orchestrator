@@ -123,15 +123,17 @@ async def experiments_list_page(request: Request):
 
     async def render_experiment_card(exp):
         """Helper function to render a single experiment card."""
-        with ui.card().classes('w-full'):
-            with ui.row().classes('w-full items-center justify-between'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.label(exp.name).classes('text-h5')
-                    
-                    # Creator badge (for standalone only)
-                    if not exp.batch:
-                        creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
-                        ui.badge(f'By: {creator_name}', color='grey').props('outline')
+        # Make entire card clickable
+        with ui.link(target=f'/experiments/{exp.id}').classes('no-underline w-full'):
+            with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.label(exp.name).classes('text-h5')
+                        
+                        # Creator badge (for standalone only)
+                        if not exp.batch:
+                            creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
+                            ui.badge(f'By: {creator_name}', color='grey').props('outline')
                 
                 # Status badges
                 with ui.row().classes('gap-2'):
@@ -153,28 +155,19 @@ async def experiments_list_page(request: Request):
                                 ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
                             elif status == 'queued':
                                 ui.badge('⏳ Queued', color='grey').props('outline')
-            
-            with ui.row().classes('gap-2'):
-                ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
-                ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
-                ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
                 
-                # Only show delete if user has permission (admin or creator)
-                if user.is_admin or exp.created_by_id == user.id:
-                    ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
-            
-            ui.label(
-                f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
-                f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
-            ).classes('text-caption text-grey')
-            
-            # Stats
-            msg_count = await ChatMessage.filter(experiment=exp).count()
-            if exp.batch:
-                expected = exp.max_turns * 2
-                ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
-            else:
-                ui.label(f'{msg_count} messages').classes('text-caption')
+                ui.label(
+                    f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
+                    f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
+                ).classes('text-caption text-grey')
+                
+                # Stats
+                msg_count = await ChatMessage.filter(experiment=exp).count()
+                if exp.batch:
+                    expected = exp.max_turns * 2
+                    ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
+                else:
+                    ui.label(f'{msg_count} messages').classes('text-caption')
     
     # Main rendering logic
     if not experiments:
@@ -264,14 +257,11 @@ async def experiments_list_page(request: Request):
                 # Batch summary card with expansion
                 with ui.card().classes('w-full'):
                     with ui.row().classes('w-full items-center gap-2'):
-                        # Make batch header clickable to view progress
-                        with ui.link(target=f'/batch/{batch.id}').classes('flex-grow no-underline'):
-                            with ui.row().classes('items-center gap-2 cursor-pointer hover:bg-grey-100 rounded p-2 transition-all'):
-                                ui.icon('view_list', size='sm')
-                                ui.label(f'📦 Batch #{batch_id}: {batch.name} • By: {creator_name}').classes('text-subtitle1')
-                        
-                        # Expansion for experiment details (optional)
-                        with ui.expansion('Show Details', icon='expand_more').classes('flex-shrink-0'):
+                        # Expansion shows experiments
+                        with ui.expansion(
+                            f'📦 Batch #{batch_id}: {batch.name} • By: {creator_name}',
+                            icon='unfold_more'
+                        ).classes('flex-grow'):
                             # Action buttons at top
                             with ui.row().classes('gap-2 mb-4'):
                                 ui.button('View Batch Progress', on_click=lambda b=batch: ui.navigate.to(f'/batch/{b.id}')).props('flat size=sm color=primary')

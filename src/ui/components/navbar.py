@@ -130,6 +130,6 @@ def create_navbar():
             # Logout button
             def logout():
                 app.storage.user.clear()
-                ui.navigate.to('/onboarding')
+                ui.open('/onboarding')
             
             ui.button('Logout', on_click=logout).props('flat color=white')
