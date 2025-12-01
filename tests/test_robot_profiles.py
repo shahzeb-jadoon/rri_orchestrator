@@ -15,9 +15,8 @@ async def test_create_robot_profile_with_ai_config(init_test_db):
     Test creating a robot profile with AI provider configuration.
     """
     user = await User.create(
-        username="researcher",
         email="researcher@example.com",
-        hashed_password="password123"
+        display_name="Test Researcher"
     )
     
     robot = await RobotProfile.create(
@@ -41,9 +40,8 @@ async def test_create_experiment_with_robot_profiles(init_test_db):
     Test creating an experiment with two different robot profiles.
     """
     user = await User.create(
-        username="researcher",
         email="researcher@example.com",
-        hashed_password="password123"
+        display_name="Test Researcher"
     )
     
     # Create Robot A with OpenAI
@@ -92,14 +90,12 @@ async def test_robot_profile_default_values(init_test_db):
     Test that robot profiles have sensible defaults for AI configuration.
     """
     user = await User.create(
-        username="researcher",
         email="researcher@example.com",
-        hashed_password="password123"
+        display_name="Test Researcher"
     )
     
-    robot = await RobotProfile.create(
-        name="Default Robot",
-        description="Robot with default AI settings",
+    robot_a = await RobotProfile.create(
+        name="Old Robot A",th default AI settings",
         system_prompt="You are helpful.",
         created_by=user
     )
