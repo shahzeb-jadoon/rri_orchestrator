@@ -985,6 +985,8 @@ async def chat_page(experiment_id: int):
         @ui.refreshable
         async def max_turns_status():
             """Display max turns status and extension options."""
+            # Reload experiment to get latest max_turns
+            await experiment.refresh_from_db()
             robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
             robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
             max_per_robot = experiment.max_turns or 10
@@ -1182,6 +1184,59 @@ async def chat_page(experiment_id: int):
                 state['pause_after_round'] = True
                 ui.notify('Will pause after current round finishes', type='info')
             
+            async def update_max_turns_handler():
+                """Show dialog to update max_turns while paused."""
+                # Get current progress
+                robot_a_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_a').count()
+                robot_b_count = await ChatMessage.filter(experiment=experiment, robot_name='robot_b').count()
+                current_progress = max(robot_a_count, robot_b_count)
+                current_max = experiment.max_turns or 10
+                
+                with ui.dialog() as update_dialog, ui.card().classes('w-96'):
+                    ui.label('Update Max Turns').classes('text-h6')
+                    ui.label(f'Current progress: {current_progress} turns per robot').classes('text-caption text-grey')
+                    ui.label(f'Current max turns: {current_max}').classes('text-caption text-grey mb-4')
+                    
+                    new_max_turns = ui.number(
+                        label='New Max Turns',
+                        value=current_max,
+                        min=current_progress,
+                        max=200,
+                        step=1
+                    ).classes('w-full').props('outlined')
+                    
+                    ui.label(f'⚠️ Must be at least {current_progress} (current progress)').classes('text-caption text-orange')
+                    
+                    async def save_new_max_turns():
+                        new_value = int(new_max_turns.value)
+                        
+                        # Validate
+                        if new_value < current_progress:
+                            ui.notify(
+                                f'Cannot set max_turns to {new_value}. Current progress is {current_progress}.',
+                                type='negative'
+                            )
+                            return
+                        
+                        # Update experiment
+                        experiment.max_turns = new_value
+                        await experiment.save()
+                        
+                        # Refresh UI
+                        await max_turns_status.refresh()
+                        
+                        ui.notify(
+                            f'Max turns updated: {current_max} → {new_value}',
+                            type='positive'
+                        )
+                        update_dialog.close()
+                    
+                    with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                        ui.button('Cancel', on_click=update_dialog.close).props('flat')
+                        ui.button('Update', on_click=save_new_max_turns).props('color=primary')
+                
+                update_dialog.open()
+            
             # Determine button text
             msg_count = await ChatMessage.filter(experiment=experiment).count()
             start_text = '▶ Start Conversation' if msg_count == 0 else ('▶ Resume Conversation' if state['auto_mode'] else '▶ Next Turn')
@@ -1190,6 +1245,7 @@ async def chat_page(experiment_id: int):
             run_round_btn = ui.button('▶▶ Run Round', on_click=run_full_round).props('color=secondary')
             pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')
             pause_round_btn = ui.button('⏸ Pause After Round', on_click=pause_after_round).props('flat disable')
+            ui.button('🎯 Update Max Turns', on_click=update_max_turns_handler).props('flat color=purple')
             
             # Set initial visibility based on mode
             if state['auto_mode']:
