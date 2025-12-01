@@ -9,6 +9,7 @@ from datetime import datetime
 from starlette.requests import Request
 from src.database.models import ExperimentBatch, ExperimentQueue, Experiment, ChatMessage
 from src.ui.components import create_navbar
+from src.ui.utils import get_friendly_error_message
 
 
 @ui.page('/batch/{batch_id}')
@@ -123,10 +124,11 @@ async def batch_progress_page(batch_id: int, request: Request):
                     with ui.row().classes('gap-2'):
                         ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
                         
-                        # Show error message if failed
+                        # Show intelligent error message if failed
                         if entry.status == 'failed' and entry.error_message:
-                            error_preview = entry.error_message[:100] + ('...' if len(entry.error_message) > 100 else '')
-                            ui.icon('info', size='sm').classes('text-negative').tooltip(error_preview)
+                            badge_text, tooltip_msg, severity = get_friendly_error_message(entry.error_message)
+                            ui.badge(badge_text, color=severity).props('outline')
+                            ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
     
     # Initial render
     await render_stats()
