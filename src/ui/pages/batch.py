@@ -223,6 +223,16 @@ async def build_config_section(result, user):
                 setattr(schedule_time, 'value', None)
             )).props('flat size=sm color=grey')
         
+        # Quick schedule for tonight at 10 PM
+        def schedule_tonight():
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            tonight = now.replace(hour=22, minute=0, second=0, microsecond=0)
+            if tonight <= now:
+                tonight += timedelta(days=1)
+            schedule_date.value = tonight.strftime('%Y-%m-%d')
+            schedule_time.value = '22:00'
+        
         # Create batch button
         async def create_batch():
             """Create the experiment batch."""
@@ -316,4 +326,7 @@ async def build_config_section(result, user):
             except Exception as e:
                 ui.notify(f'Error creating batch: {str(e)}', type='negative')
         
-        ui.button('Create Batch', on_click=create_batch).props('color=primary size=lg').classes('w-full mt-6')
+        # Action buttons
+        with ui.row().classes('w-full gap-4 mt-6'):
+            ui.button('🌙 Schedule for 10 PM Tonight', on_click=lambda: (schedule_tonight(), create_batch())).props('color=secondary size=lg').classes('flex-1')
+            ui.button('Create Batch Now', on_click=create_batch).props('color=primary size=lg').classes('flex-1')
