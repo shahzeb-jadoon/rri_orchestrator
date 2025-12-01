@@ -26,9 +26,11 @@ async def load_active_users():
         if entry.experiment and entry.experiment.created_by:
             user_id = entry.experiment.created_by.id
             user_name = entry.experiment.created_by.display_name
+            user_email = entry.experiment.created_by.email
             if user_id not in user_activity:
                 user_activity[user_id] = {
                     'name': user_name,
+                    'email': user_email,
                     'count': 0
                 }
             user_activity[user_id]['count'] += 1
@@ -39,6 +41,7 @@ async def load_active_users():
         vm = ActiveUserViewModel(user_id, data['name'])
         vm.activity = 'running'
         vm.experiment_count = data['count']
+        vm.email = data['email']  # Store email for display
         active_users_vms[user_id] = vm
 
 
@@ -77,6 +80,7 @@ def create_navbar():
                                 with ui.item():
                                     with ui.item_section():
                                         ui.item_label(vm.display_name).classes('font-bold')
+                                        ui.item_label(vm.email).classes('text-caption text-grey')
                                         ui.item_label(f'Running {vm.experiment_count} experiment{"s" if vm.experiment_count != 1 else ""}').classes('text-caption')
                         else:
                             ui.label('No active experiments').classes('text-grey px-4 py-2')
