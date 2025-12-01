@@ -6,7 +6,7 @@ from nicegui import ui, app
 import asyncio
 from datetime import datetime
 from starlette.requests import Request
-from src.database.models import Experiment, RobotProfile, ChatMessage, ExperimentQueue, ExperimentBatch
+from src.database.models import Experiment, RobotProfile, ChatMessage, ExperimentQueue, ExperimentBatch, User
 from src.ai.conversation import orchestrate_conversation_turn
 from src.ui.components import create_navbar
 from src.utils.logger import logger
@@ -72,7 +72,7 @@ async def export_all_experiments():
 
 @ui.page('/experiments')
 async def experiments_list_page(request: Request):
-    """List all experiments with auto-refresh."""
+    """List all experiments with search, pagination, and auto-refresh."""
     create_navbar()
     
     # Get current user
@@ -80,6 +80,19 @@ async def experiments_list_page(request: Request):
     if not user:
         ui.label('Please log in to view experiments').classes('text-negative')
         return
+    
+    # Extract query parameters
+    params = request.query_params
+    current_page = int(params.get('page', 1))
+    page_size = 25
+    
+    # Search filters
+    search_name = params.get('name', '')
+    search_creator = params.get('creator', '')
+    search_from = params.get('from', '')
+    search_to = params.get('to', '')
+    search_batch = params.get('batch', 'all')
+    search_status = params.get('status', 'all')
     
     # Header with export and deleted link
     with ui.row().classes('w-full justify-between items-center'):
@@ -97,9 +110,75 @@ async def experiments_list_page(request: Request):
     
     ui.space()
     
+    # Search panel
+    with ui.expansion('🔍 Search & Filter', icon='search').classes('w-full') as search_panel:
+        with ui.grid(columns=3).classes('w-full gap-4'):
+            # Name search
+            name_input = ui.input('Experiment Name', value=search_name).classes('w-full')
+            
+            # Creator filter
+            all_users = await User.all().order_by('display_name')
+            creator_options = {'': 'All Creators'} | {str(u.id): u.display_name for u in all_users}
+            creator_select = ui.select(creator_options, label='Creator', value=search_creator).classes('w-full')
+            
+            # Batch filter
+            batch_select = ui.select({
+                'all': 'All Experiments',
+                'batches': 'Batch Only',
+                'standalone': 'Standalone Only'
+            }, label='Type', value=search_batch).classes('w-full')
+            
+            # Date from
+            from_input = ui.input('From Date', value=search_from).classes('w-full')
+            from_input.props('type=date')
+            
+            # Date to
+            to_input = ui.input('To Date', value=search_to).classes('w-full')
+            to_input.props('type=date')
+            
+            # Status filter
+            status_select = ui.select({
+                'all': 'All Status',
+                'running': 'Running',
+                'completed': 'Completed',
+                'failed': 'Failed',
+                'queued': 'Queued'
+            }, label='Status', value=search_status).classes('w-full')
+        
+        # Search buttons
+        with ui.row().classes('gap-2 mt-4'):
+            def apply_search():
+                url_parts = ['/experiments?']
+                if name_input.value:
+                    url_parts.append(f'name={name_input.value}&')
+                if creator_select.value:
+                    url_parts.append(f'creator={creator_select.value}&')
+                if from_input.value:
+                    url_parts.append(f'from={from_input.value}&')
+                if to_input.value:
+                    url_parts.append(f'to={to_input.value}&')
+                if batch_select.value != 'all':
+                    url_parts.append(f'batch={batch_select.value}&')
+                if status_select.value != 'all':
+                    url_parts.append(f'status={status_select.value}&')
+                
+                url = ''.join(url_parts).rstrip('&?')
+                ui.navigate.to(url or '/experiments')
+            
+            def clear_search():
+                ui.navigate.to('/experiments')
+            
+            ui.button('Search', on_click=apply_search, icon='search').props('color=primary')
+            ui.button('Clear', on_click=clear_search, icon='clear').props('flat')
+    
+    ui.space()
+    
     # ViewModels storage
     experiment_vms = {}  # {experiment_id: ExperimentListViewModel}
     batch_summaries = {}  # {batch_id: {'completed': 0, 'running': 0, ...}}
+    batch_expansion_states = {}  # {batch_id: True/False} - track which batches are expanded
+    total_experiments = 0
+    total_pages = 1
     
     async def delete_experiment(exp_id: int):
         """Soft delete experiment with permission check."""
@@ -217,10 +296,18 @@ async def experiments_list_page(request: Request):
                 # Batch summary card
                 with ui.card().classes('w-full'):
                     with ui.row().classes('w-full items-center gap-2'):
-                        with ui.expansion(
+                        # Track expansion state
+                        is_expanded = batch_expansion_states.get(batch_id, False)
+                        expansion = ui.expansion(
                             f'📦 Batch #{batch_id}: {batch_data["batch_name"]} • By: {batch_data["creator_name"]}',
-                            icon='unfold_more'
-                        ).classes('flex-grow'):
+                            icon='unfold_more',
+                            value=is_expanded
+                        ).classes('flex-grow')
+                        
+                        # Save state when toggled
+                        expansion.on('update:model-value', lambda e, bid=batch_id: batch_expansion_states.update({bid: e.args}))
+                        
+                        with expansion:
                             # Action buttons at top
                             with ui.row().classes('gap-2 mb-4'):
                                 ui.button('View Batch Progress', on_click=lambda b=batch_id: ui.navigate.to(f'/batch/{b}')).props('flat size=sm color=primary')
@@ -239,11 +326,51 @@ async def experiments_list_page(request: Request):
                 render_experiment_card_from_vm(vm)
     
     async def load_data():
-        """Load experiments and update ViewModels."""
-        # Load all non-deleted experiments
-        experiments = await Experiment.filter(
-            deleted_at__isnull=True
-        ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch', 'batch__created_by').order_by('-created_at')
+        """Load experiments with search filters and pagination."""
+        nonlocal total_experiments, total_pages
+        
+        # Build query with filters
+        query = Experiment.filter(deleted_at__isnull=True)
+        
+        # Apply search filters
+        if search_name:
+            query = query.filter(name__icontains=search_name)
+        
+        if search_creator:
+            query = query.filter(created_by_id=int(search_creator))
+        
+        if search_from:
+            from datetime import datetime
+            from_date = datetime.strptime(search_from, '%Y-%m-%d')
+            query = query.filter(created_at__gte=from_date)
+        
+        if search_to:
+            from datetime import datetime
+            to_date = datetime.strptime(search_to, '%Y-%m-%d')
+            # Add 1 day to include the entire "to" date
+            from datetime import timedelta
+            to_date = to_date + timedelta(days=1)
+            query = query.filter(created_at__lt=to_date)
+        
+        if search_batch == 'batches':
+            query = query.filter(batch_id__isnull=False)
+        elif search_batch == 'standalone':
+            query = query.filter(batch_id__isnull=True)
+        
+        if search_status != 'all':
+            # Get experiment IDs with matching status from queue
+            queue_ids = await ExperimentQueue.filter(status=search_status).values_list('experiment_id', flat=True)
+            query = query.filter(id__in=list(queue_ids))
+        
+        # Count total for pagination
+        total_experiments = await query.count()
+        total_pages = max(1, (total_experiments + page_size - 1) // page_size)
+        
+        # Apply pagination
+        offset = (current_page - 1) * page_size
+        experiments = await query.offset(offset).limit(page_size).prefetch_related(
+            'created_by', 'robot_a_profile', 'robot_b_profile', 'batch', 'batch__created_by'
+        ).order_by('-created_at')
         
         # Track which VMs to keep
         current_exp_ids = set()
@@ -311,6 +438,46 @@ async def experiments_list_page(request: Request):
     # Initial load
     await load_data()
     render_experiments()
+    
+    # Pagination controls
+    with ui.row().classes('w-full justify-center items-center gap-4 mt-8'):
+        def build_page_url(page):
+            """Build URL with current filters and new page number."""
+            url_parts = [f'/experiments?page={page}']
+            if search_name:
+                url_parts.append(f'&name={search_name}')
+            if search_creator:
+                url_parts.append(f'&creator={search_creator}')
+            if search_from:
+                url_parts.append(f'&from={search_from}')
+            if search_to:
+                url_parts.append(f'&to={search_to}')
+            if search_batch != 'all':
+                url_parts.append(f'&batch={search_batch}')
+            if search_status != 'all':
+                url_parts.append(f'&status={search_status}')
+            return ''.join(url_parts)
+        
+        # Previous button
+        prev_btn = ui.button('← Previous', on_click=lambda: ui.navigate.to(build_page_url(current_page - 1)))
+        prev_btn.props('flat color=primary')
+        if current_page <= 1:
+            prev_btn.disable()
+        
+        # Page info
+        ui.label(f'Page {current_page} of {total_pages} • {total_experiments} experiments').classes('text-body1')
+        
+        # Page jumper
+        with ui.row().classes('items-center gap-2'):
+            page_input = ui.input('Go to page').props('type=number min=1').classes('w-20')
+            page_input.value = str(current_page)
+            ui.button('Go', on_click=lambda: ui.navigate.to(build_page_url(int(page_input.value) if page_input.value else 1))).props('flat size=sm')
+        
+        # Next button
+        next_btn = ui.button('Next →', on_click=lambda: ui.navigate.to(build_page_url(current_page + 1)))
+        next_btn.props('flat color=primary')
+        if current_page >= total_pages:
+            next_btn.disable()
     
     # Auto-refresh every 2 seconds
     async def refresh_data():
