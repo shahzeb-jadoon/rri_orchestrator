@@ -6,6 +6,7 @@ Setup and monitor robot-robot experiments.
 
 from nicegui import ui, app
 import asyncio
+from datetime import datetime
 from starlette.requests import Request
 from src.database.models import Experiment, RobotProfile, ChatMessage
 from src.ai.conversation import orchestrate_conversation_turn
@@ -170,14 +171,22 @@ async def export_all_experiments():
 
 
 @ui.page('/experiments')
-async def experiments_list_page():
+async def experiments_list_page(request: Request):
     """List all experiments."""
     create_navbar()
     
-    # Header with export button
-    with ui.row().classes('w-full items-center justify-between mb-4'):
-        ui.label('Experiments').classes('text-h3')
-        ui.button('📥 Export All', on_click=export_all_experiments).props('flat color=primary')
+    # Get current user
+    user = getattr(request.state, 'user', None)
+    if not user:
+        ui.label('Please log in to view experiments').classes('text-negative')
+        return
+    
+    # Header with export and deleted link
+    with ui.row().classes('w-full justify-between items-center'):
+        ui.label('Experiments').classes('text-h4')
+        with ui.row().classes('gap-2'):
+            ui.button('🗑️ Deleted', on_click=lambda: ui.navigate.to('/experiments/deleted')).props('flat color=grey')
+            ui.button('📥 Export All', on_click=export_all_experiments).props('flat color=primary')
     
     ui.label('Manage robot-robot interaction experiments').classes('text-subtitle1 text-grey')
     
@@ -188,12 +197,26 @@ async def experiments_list_page():
     
     ui.space()
     
-    # Load experiments
-    experiments = await Experiment.all().prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
+    # Load only non-deleted experiments
+    experiments = await Experiment.filter(
+        deleted_at__isnull=True
+    ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
     
     async def delete_experiment(exp_id: int):
-        await Experiment.filter(id=exp_id).delete()
-        ui.notify('Experiment deleted', type='positive')
+        """Soft delete experiment with permission check."""
+        exp = await Experiment.get(id=exp_id).prefetch_related('created_by')
+        
+        # Permission check: must be creator or admin
+        if not user.is_admin and exp.created_by_id != user.id:
+            ui.notify('Permission denied: You can only delete your own experiments', type='negative')
+            return
+        
+        # Soft delete
+        exp.deleted_at = datetime.now()
+        exp.deleted_by_id = user.id
+        await exp.save()
+        
+        ui.notify('Experiment moved to trash', type='positive')
         ui.navigate.to('/experiments')
 
     if not experiments:
@@ -208,6 +231,10 @@ async def experiments_list_page():
                         # Batch indicator
                         if exp.batch:
                             ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
+                        
+                        # Creator badge
+                        creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
+                        ui.badge(f'By: {creator_name}', color='grey').props('outline')
                         
                         # Check completion status for batch experiments
                         if exp.batch:
@@ -246,7 +273,10 @@ async def experiments_list_page():
                         ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
                         ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
                         ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
-                        ui.button(icon='delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=red')
+                        
+                        # Only show delete if user has permission (admin or creator)
+                        if user.is_admin or exp.created_by_id == user.id:
+                            ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
                 
                 ui.label(
                     f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '

@@ -117,6 +117,15 @@ class Experiment(Model):
     )
     batch_index = fields.IntField(null=True)
     
+    # Soft delete for data preservation
+    deleted_at = fields.DatetimeField(null=True, default=None)
+    deleted_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="deleted_experiments",
+        on_delete=fields.SET_NULL,
+        null=True
+    )
+    
     # Relationships
     messages: fields.ReverseRelation["ChatMessage"]
     summaries: fields.ReverseRelation["ConversationSummary"]
