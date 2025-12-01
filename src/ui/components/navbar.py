@@ -20,6 +20,11 @@ async def load_active_users():
         status='running'
     ).prefetch_related('experiment', 'experiment__created_by')
     
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Active users check: Found {len(running_entries)} running experiments")
+    
     # Count experiments per user
     user_activity = {}
     for entry in running_entries:
@@ -27,6 +32,7 @@ async def load_active_users():
             user_id = entry.experiment.created_by.id
             user_name = entry.experiment.created_by.display_name
             user_email = entry.experiment.created_by.email
+            logger.info(f"  - User {user_name} ({user_email}) has running experiment")
             if user_id not in user_activity:
                 user_activity[user_id] = {
                     'name': user_name,
@@ -34,6 +40,8 @@ async def load_active_users():
                     'count': 0
                 }
             user_activity[user_id]['count'] += 1
+    
+    logger.info(f"Active users: {len(user_activity)} unique users")
     
     # Update ViewModels
     active_users_vms.clear()
@@ -60,7 +68,9 @@ def create_navbar():
             # Check if user is admin (stored in session)
             current_user = app.storage.user.get('current_user', {})
             if current_user.get('is_admin', False):
-                ui.link('Admin', '/admin/users').classes('text-white')
+                with ui.button(icon='admin_panel_settings').props('flat color=red').classes('text-white'):
+                    with ui.menu():
+                        ui.menu_item('User Management', on_click=lambda: ui.navigate.to('/admin/users'))
         
         # Active users widget (right side)
         with ui.row().classes('items-center gap-2'):
@@ -92,12 +102,12 @@ def create_navbar():
             
             ui.timer(0.1, initial_load, once=True)  # Load immediately
             
-            # Auto-refresh every 30 seconds
+            # Auto-refresh every 2 seconds for real-time updates
             async def refresh_users():
                 await load_active_users()
                 render_active_users.refresh()
             
-            ui.timer(30.0, refresh_users)
+            ui.timer(2.0, refresh_users)
             
             # Render widget
             render_active_users()
