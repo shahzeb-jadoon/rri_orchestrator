@@ -46,28 +46,17 @@ def create_navbar():
     """Create the navigation bar with active users widget."""
     with ui.header().classes('items-center justify-between'):
         with ui.row().classes('items-center'):
-            ui.link('RRI Orchestrator', '/').classes('text-h6 text-white no-underline')
+            # Clickable logo that goes to home
+            with ui.link(target='/'):
+                ui.label('RRI Orchestrator').classes('text-h6 text-white cursor-pointer')
             ui.link('Experiments', '/experiments').classes('text-white')
             ui.link('Robots', '/robots').classes('text-white')
             ui.link('Create Batch', '/batch/create').classes('text-white')
             
-            # Check if user is admin
-            user_email = app.storage.user.get('user_email')
-            if user_email:
-                from src.database.models import User as UserModel
-                import asyncio
-                
-                async def check_admin():
-                    user_obj = await UserModel.get_or_none(email=user_email)
-                    return user_obj and user_obj.is_admin
-                
-                # Run async check
-                try:
-                    is_admin = asyncio.run(check_admin())
-                    if is_admin:
-                        ui.link('Admin', '/admin/users').classes('text-white')
-                except:
-                    pass
+            # Check if user is admin (stored in session)
+            is_admin = app.storage.user.get('is_admin', False)
+            if is_admin:
+                ui.link('Admin', '/admin/users').classes('text-white')
         
         # Active users widget (right side)
         with ui.row().classes('items-center gap-2'):
@@ -108,4 +97,8 @@ def create_navbar():
             render_active_users()
             
             # Logout button
-            ui.button('Logout', on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/onboarding'))).props('flat color=white')
+            def logout():
+                app.storage.user.clear()
+                ui.navigate.to('/onboarding')
+            
+            ui.button('Logout', on_click=logout).props('flat color=white')
