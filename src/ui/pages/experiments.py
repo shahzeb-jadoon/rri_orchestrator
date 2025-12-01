@@ -123,75 +123,73 @@ async def experiments_list_page(request: Request):
     if not experiments:
         ui.label('No experiments yet. Create one above to get started.').classes('text-grey')
     else:
+        # Group experiments by batch
+        batch_groups = {}  # {batch_id: [experiments]}
+        standalone_experiments = []
+        
         for exp in experiments:
+            if exp.batch_id:
+                if exp.batch_id not in batch_groups:
+                    batch_groups[exp.batch_id] = []
+                batch_groups[exp.batch_id].append(exp)
+            else:
+                standalone_experiments.append(exp)
+        
+        # Render batch groups first (collapsible)
+        for batch_id in sorted(batch_groups.keys(), reverse=True):
+            batch_exps = batch_groups[batch_id]
+            
+            # Get batch info
+            batch = batch_exps[0].batch
+            
+            # Calculate batch summary
+            completed_count = 0
+            running_count = 0
+            queued_count = 0
+            failed_count = 0
+            
+            for exp in batch_exps:
+                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
+                if queue_entry:
+                    if queue_entry.status == 'completed':
+                        completed_count += 1
+                    elif queue_entry.status == 'running':
+                        running_count += 1
+                    elif queue_entry.status == 'queued':
+                        queued_count += 1
+                    elif queue_entry.status == 'failed':
+                        failed_count += 1
+            
+            total = len(batch_exps)
+            
+            # Batch summary card with expansion
             with ui.card().classes('w-full'):
-                with ui.row().classes('w-full items-center justify-between'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.label(exp.name).classes('text-h5')
-                        
-                        # Batch indicator
-                        if exp.batch:
-                            ui.badge(f'Batch #{exp.batch.id}', color='blue').props('outline')
-                            ui.button('View Batch', on_click=lambda b=exp.batch: ui.navigate.to(f'/batch/{b.id}')).props('flat size=sm color=blue')
-                        
-                        # Creator badge
-                        creator_name = exp.created_by.display_name if exp.created_by else (exp.created_by_name or 'Unknown')
-                        ui.badge(f'By: {creator_name}', color='grey').props('outline')
-                        
-                        # Check completion status for batch experiments
-                        if exp.batch:
-                            msg_count = await ChatMessage.filter(experiment=exp).count()
-                            expected_messages = exp.max_turns * 2
-                            
-                            if msg_count >= expected_messages:
-                                ui.badge('✓ Complete', color='green')
-                            elif msg_count > 0:
-                                # Check queue status for more detail
-                                from src.database import ExperimentQueue
-                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
-                                if queue_entry:
-                                    if queue_entry.status == 'failed':
-                                        # Parse error for user-friendly message
-                                        badge_text, tooltip_msg, severity = get_friendly_error_message(queue_entry.error_message or '')
-                                        
-                                        # Show badge with message count
-                                        ui.badge(f'{badge_text} ({msg_count}/{expected_messages})', color=severity).props('outline')
-                                        
-                                        # Add info icon with helpful tooltip
-                                        ui.icon('help_outline', size='sm').classes(f'text-{severity}').tooltip(tooltip_msg).style('cursor: help')
-                                        
-                                    elif queue_entry.status == 'running':
-                                        ui.badge(f'🔄 Running ({msg_count}/{expected_messages})', color='blue')
-                                    else:
-                                        ui.badge(f'Partial ({msg_count}/{expected_messages})', color='orange').props('outline')
-                            else:
-                                # No messages yet
-                                from src.database import ExperimentQueue
-                                queue_entry = await ExperimentQueue.get_or_none(experiment=exp)
-                                if queue_entry and queue_entry.status == 'queued':
-                                    ui.badge('⏳ Queued', color='grey').props('outline')
+                with ui.expansion(f'📦 Batch #{batch_id}: {batch.name} • {completed_count}/{total} ✓', icon='view_list').classes('w-full'):
+                    # Batch stats
+                    with ui.row().classes('gap-4 mb-4'):
+                        ui.badge(f'✓ {completed_count} Complete', color='positive' if completed_count > 0 else 'grey').props('outline')
+                        if running_count > 0:
+                            ui.badge(f'🔄 {running_count} Running', color='blue').props('outline')
+                        if queued_count > 0:
+                            ui.badge(f'⏳ {queued_count} Queued', color='grey').props('outline')
+                        if failed_count > 0:
+                            ui.badge(f'⚠ {failed_count} Failed', color='negative').props('outline')
+                        ui.button('View Batch Progress', on_click=lambda b=batch: ui.navigate.to(f'/batch/{b.id}')).props('flat size=sm color=primary')
                     
-                    with ui.row().classes('gap-2'):
-                        ui.button('View', on_click=lambda e=exp: ui.navigate.to(f'/experiments/{e.id}')).props('flat size=sm')
-                        ui.button('📥 CSV', on_click=lambda e=exp: export_to_csv(e.id)).props('flat size=sm')
-                        ui.button('📥 JSON', on_click=lambda e=exp: export_to_json(e.id)).props('flat size=sm')
-                        
-                        # Only show delete if user has permission (admin or creator)
-                        if user.is_admin or exp.created_by_id == user.id:
-                            ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
-                
-                ui.label(
-                    f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
-                    f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
-                ).classes('text-caption text-grey')
-                
-                # Stats
-                msg_count = await ChatMessage.filter(experiment=exp).count()
-                if exp.batch:
-                    expected = exp.max_turns * 2
-                    ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
-                else:
-                    ui.label(f'{msg_count} messages').classes('text-caption')
+                ui.button('Delete', on_click=lambda e=exp: delete_experiment(e.id)).props('flat size=sm color=negative')
+        
+        ui.label(
+            f'{exp.robot_a_profile.name} ({exp.robot_a_profile.model_name}) vs '
+            f'{exp.robot_b_profile.name} ({exp.robot_b_profile.model_name})'
+        ).classes('text-caption text-grey')
+        
+        # Stats
+        msg_count = await ChatMessage.filter(experiment=exp).count()
+        if exp.batch:
+            expected = exp.max_turns * 2
+            ui.label(f'{msg_count}/{expected} messages ({exp.max_turns} turns each)').classes('text-caption')
+        else:
+            ui.label(f'{msg_count} messages').classes('text-caption')
 
 
 @ui.page('/experiments/create')
