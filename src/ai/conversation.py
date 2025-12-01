@@ -89,9 +89,15 @@ async def orchestrate_conversation_turn(
     else:
         # Apply hybrid context window management
         
-        # Transform roles first
+        # Transform roles first, filtering interjections by target
         history = []
         for msg in messages:
+            # Skip interjections not meant for this robot
+            if msg.is_interjection:
+                target = msg.interjection_target
+                if target != 'both' and target != initiating_robot:
+                    continue  # Skip this interjection, not for this robot
+            
             if msg.robot_name == initiating_robot:
                 history.append({
                     "role": "assistant",
@@ -121,8 +127,14 @@ async def orchestrate_conversation_turn(
                 "content": f"Previous conversation summary: {summary_text}"
             })
             
-            # Add recent messages (skip first 5)
+            # Add recent messages (skip first 5), filtering interjections
             for msg in messages[5:]:
+                # Skip interjections not meant for this robot
+                if msg.is_interjection:
+                    target = msg.interjection_target
+                    if target != 'both' and target != initiating_robot:
+                        continue
+                
                 if msg.robot_name == initiating_robot:
                     conversation_history.append({
                         "role": "assistant",

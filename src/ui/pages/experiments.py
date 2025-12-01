@@ -920,15 +920,26 @@ async def chat_page(experiment_id: int):
             ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
         else:
             for vm in message_vms.values():
-                # Determine robot and color
-                is_robot_a = vm.robot_name == 'robot_a'
-                robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
-                card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
+                # Check if this is an interjection
+                msg = await ChatMessage.get(id=vm.id)
                 
-                with ui.card().classes(f'w-full {card_color}'):
-                    ui.label(f'🤖 {robot_name}').classes('text-bold')
-                    ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
-                    ui.label(vm.metadata_text).classes('text-caption text-grey')
+                if msg.is_interjection:
+                    # Researcher interjection - distinct yellow styling
+                    target_text = msg.interjection_target.replace('_', ' ').title() if msg.interjection_target else 'Both Robots'
+                    with ui.card().classes('w-full bg-yellow-100 border-l-4 border-yellow-600'):
+                        ui.label(f'👤 Researcher to {target_text}').classes('text-bold text-yellow-900')
+                        ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
+                        ui.label(vm.metadata_text).classes('text-caption text-grey')
+                else:
+                    # Normal robot message
+                    is_robot_a = vm.robot_name == 'robot_a'
+                    robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
+                    card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
+                    
+                    with ui.card().classes(f'w-full {card_color}'):
+                        ui.label(f'🤖 {robot_name}').classes('text-bold')
+                        ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
+                        ui.label(vm.metadata_text).classes('text-caption text-grey')
     
     await load_messages()
     await display_messages()
@@ -1184,6 +1195,59 @@ async def chat_page(experiment_id: int):
                 state['pause_after_round'] = True
                 ui.notify('Will pause after current round finishes', type='info')
             
+            async def send_interjection_handler():
+                """Show dialog to send researcher interjection to robots."""
+                with ui.dialog() as interjection_dialog, ui.card().classes('w-[600px]'):
+                    ui.label('Send Message to Robot(s)').classes('text-h6')
+                    ui.label('Inject a message into the conversation without incrementing turn counter.').classes('text-caption text-grey mb-4')
+                    
+                    message_input = ui.textarea(
+                        label='Your Message',
+                        placeholder='Type your message to the robot(s)...'
+                    ).classes('w-full').props('outlined rows=4')
+                    
+                    target_select = ui.select(
+                        options={'robot_a': f'{experiment.robot_a_profile.name} only', 
+                                'robot_b': f'{experiment.robot_b_profile.name} only', 
+                                'both': 'Both robots'},
+                        label='Send to:',
+                        value='both'
+                    ).classes('w-full').props('outlined')
+                    
+                    ui.label('⚠️ The robot(s) will see this message and can respond.').classes('text-caption text-orange mt-2')
+                    
+                    async def send_interjection():
+                        if not message_input.value or not message_input.value.strip():
+                            ui.notify('Please enter a message', type='negative')
+                            return
+                        
+                        # Create interjection message - it will be queued for the target robot(s)
+                        interjection_msg = await ChatMessage.create(
+                            experiment=experiment,
+                            role='user',
+                            content=message_input.value.strip(),
+                            robot_name=None,  # Not from a robot
+                            is_interjection=True,
+                            interjection_target=target_select.value
+                        )
+                        
+                        # Reload messages and refresh display
+                        await load_messages()
+                        await display_messages.refresh()
+                        
+                        target_name = target_select.options[target_select.value]
+                        ui.notify(
+                            f'Interjection queued for {target_name}. They will see it on their next turn.',
+                            type='positive'
+                        )
+                        interjection_dialog.close()
+                    
+                    with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                        ui.button('Cancel', on_click=interjection_dialog.close).props('flat')
+                        ui.button('Send', on_click=send_interjection).props('color=primary')
+                
+                interjection_dialog.open()
+            
             async def update_max_turns_handler():
                 """Show dialog to update max_turns while paused."""
                 # Get current progress
@@ -1245,6 +1309,7 @@ async def chat_page(experiment_id: int):
             run_round_btn = ui.button('▶▶ Run Round', on_click=run_full_round).props('color=secondary')
             pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')
             pause_round_btn = ui.button('⏸ Pause After Round', on_click=pause_after_round).props('flat disable')
+            ui.button('👤 Send Interjection', on_click=send_interjection_handler).props('flat color=yellow-800')
             ui.button('🎯 Update Max Turns', on_click=update_max_turns_handler).props('flat color=purple')
             
             # Set initial visibility based on mode

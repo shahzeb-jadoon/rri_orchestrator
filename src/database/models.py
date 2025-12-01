@@ -172,6 +172,10 @@ class ChatMessage(Model):
     robot_name = fields.CharField(max_length=100, null=True)  # "robot_a" or "robot_b"
     robot_provider = fields.CharField(max_length=50, null=True)  # "openai", "gemini", etc.
     
+    # Researcher interjection tracking
+    is_interjection = fields.BooleanField(default=False)  # Message sent by researcher, not robot
+    interjection_target = fields.CharField(max_length=20, null=True)  # 'robot_a', 'robot_b', or 'both'
+    
     class Meta:
         table = "chat_messages"
         ordering = ["created_at"]

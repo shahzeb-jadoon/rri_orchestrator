@@ -5,6 +5,7 @@ Create, edit, and delete robot profiles with AI model configs.
 """
 
 from nicegui import ui
+from starlette.requests import Request
 from src.database.models import RobotProfile, User
 from src.ai.model_config import get_available_models, PROVIDER_NAMES
 from src.ui.components import create_navbar
@@ -75,9 +76,15 @@ async def robots_list_page():
 
 
 @ui.page('/robots/create')
-async def create_robot_page():
+async def create_robot_page(request: Request):
     """Create new robot profile."""
     create_navbar()
+    
+    # Get current user
+    user = getattr(request.state, 'user', None)
+    if not user:
+        ui.label('Please log in to create robots').classes('text-negative')
+        return
     
     ui.label('Create Robot Profile').classes('text-h4')
     
@@ -127,16 +134,7 @@ async def create_robot_page():
         
         # Save button
         async def save_robot():
-            # Get or create default user
-            user = await User.get_or_none(username='default_user')
-            if not user:
-                user = await User.create(
-                    username='default_user',
-                    email='user@example.com',
-                    hashed_password='placeholder'
-                )
-            
-            # Create robot
+            # Create robot with current user
             await RobotProfile.create(
                 name=name_input.value,
                 description=description_input.value or '',
