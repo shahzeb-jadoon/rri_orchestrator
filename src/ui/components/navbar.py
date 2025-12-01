@@ -20,11 +20,6 @@ async def load_active_users():
         status='running'
     ).prefetch_related('experiment', 'experiment__created_by')
     
-    # Debug logging
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"Active users check: Found {len(running_entries)} running experiments")
-    
     # Count experiments per user
     user_activity = {}
     for entry in running_entries:
@@ -32,7 +27,6 @@ async def load_active_users():
             user_id = entry.experiment.created_by.id
             user_name = entry.experiment.created_by.display_name
             user_email = entry.experiment.created_by.email
-            logger.info(f"  - User {user_name} ({user_email}) has running experiment")
             if user_id not in user_activity:
                 user_activity[user_id] = {
                     'name': user_name,
@@ -40,8 +34,6 @@ async def load_active_users():
                     'count': 0
                 }
             user_activity[user_id]['count'] += 1
-    
-    logger.info(f"Active users: {len(user_activity)} unique users")
     
     # Update ViewModels
     active_users_vms.clear()
@@ -56,21 +48,39 @@ async def load_active_users():
 def create_navbar():
     """Create the navigation bar with active users widget."""
     with ui.header().classes('items-center justify-between'):
-        with ui.row().classes('items-center'):
+        with ui.row().classes('items-center gap-1'):
             # Clickable logo that goes to home
             with ui.link(target='/'):
-                ui.label('RRI Orchestrator').classes('text-h6 text-white cursor-pointer')
-            ui.link('Home', '/').classes('text-white')
-            ui.link('Experiments', '/experiments').classes('text-white')
-            ui.link('Robots', '/robots').classes('text-white')
-            ui.link('Create Batch', '/batch/create').classes('text-white')
+                ui.label('RRI Orchestrator').classes('text-h6 text-white cursor-pointer font-bold')
+            
+            # Navigation buttons with icons
+            with ui.link(target='/'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                    ui.icon('home', size='sm').classes('text-white')
+                    ui.label('Home').classes('text-white')
+            
+            with ui.link(target='/experiments'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                    ui.icon('science', size='sm').classes('text-white')
+                    ui.label('Experiments').classes('text-white')
+            
+            with ui.link(target='/robots'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                    ui.icon('smart_toy', size='sm').classes('text-white')
+                    ui.label('Robots').classes('text-white')
+            
+            with ui.link(target='/batch/create'):
+                with ui.row().classes('items-center gap-1 px-3 py-1 rounded hover:bg-white hover:bg-opacity-20 transition-all'):
+                    ui.icon('add_box', size='sm').classes('text-white')
+                    ui.label('Create Batch').classes('text-white')
             
             # Check if user is admin (stored in session)
             current_user = app.storage.user.get('current_user', {})
             if current_user.get('is_admin', False):
-                with ui.button(icon='admin_panel_settings').props('flat color=red').classes('text-white'):
-                    with ui.menu():
-                        ui.menu_item('User Management', on_click=lambda: ui.navigate.to('/admin/users'))
+                with ui.link(target='/admin/users'):
+                    with ui.row().classes('items-center gap-1 px-3 py-1 rounded bg-red-600 hover:bg-red-700 transition-all'):
+                        ui.icon('admin_panel_settings', size='sm').classes('text-white')
+                        ui.label('Admin').classes('text-white font-bold')
         
         # Active users widget (right side)
         with ui.row().classes('items-center gap-2'):
@@ -102,12 +112,12 @@ def create_navbar():
             
             ui.timer(0.1, initial_load, once=True)  # Load immediately
             
-            # Auto-refresh every 2 seconds for real-time updates
+            # Auto-refresh every 1 second for real-time updates
             async def refresh_users():
                 await load_active_users()
                 render_active_users.refresh()
             
-            ui.timer(2.0, refresh_users)
+            ui.timer(1.0, refresh_users)
             
             # Render widget
             render_active_users()
