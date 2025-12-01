@@ -1,15 +1,12 @@
 """
-View Models for reactive UI updates.
-
-These ViewModels work with NiceGUI's bind_* methods to enable declarative UI updates.
-When a ViewModel property changes, bound UI elements automatically update.
+ViewModels for reactive UI updates.
 """
 
 from typing import Optional
 
 
 class ExperimentViewModel:
-    """Reactive view model for experiment data."""
+    """Batch experiment view model."""
     
     def __init__(self, experiment_id: int, experiment_name: str, max_turns: int):
         self.id = experiment_id
@@ -50,7 +47,7 @@ class ExperimentViewModel:
 
 
 class BatchViewModel:
-    """Reactive view model for batch data."""
+    """Batch progress view model."""
     
     def __init__(self, batch_id: int, batch_name: str, total_experiments: int):
         self.id = batch_id
@@ -81,7 +78,7 @@ class BatchViewModel:
 
 
 class ActiveUserViewModel:
-    """Reactive view model for active user tracking."""
+    """Active user tracking view model."""
     
     def __init__(self, user_id: int, display_name: str):
         self.id = user_id
@@ -112,11 +109,7 @@ class ActiveUserViewModel:
 
 
 class ExperimentListViewModel:
-    """Reactive view model for experiment list items.
-    
-    Tracks individual experiment state for the experiments list page.
-    Enables zero-flicker updates when experiment status or messages change.
-    """
+    """Experiment list item view model."""
     
     def __init__(self, experiment_id: int, experiment_name: str):
         self.id = experiment_id

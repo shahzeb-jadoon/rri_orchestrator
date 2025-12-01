@@ -13,11 +13,7 @@ active_users_vms = {}  # {user_id: ActiveUserViewModel}
 
 
 async def load_active_users():
-    """Query database and update active users ViewModels.
-    
-    Detects active users by finding experiments with recent activity (messages within last 60 seconds).
-    This works for BOTH batch experiments and manual standalone experiments.
-    """
+    """Update active users by checking for experiments with recent messages."""
     global active_users_vms
     
     # Define "active" as having a message in the last 60 seconds
@@ -113,14 +109,16 @@ def create_navbar():
         
         # Active users widget (right side)
         with ui.row().classes('items-center gap-2'):
-            @ui.refreshable
-            def render_active_users():
-                """Render active users button with dropdown."""
-                count = len(active_users_vms)
-                
-                # Always show button with menu
-                with ui.button(f'👥 {count} Active').props('flat color=white icon=people'):
-                    with ui.menu():
+            # Button with menu - only menu content refreshes on timer
+            active_btn = ui.button(f'👥 {len(active_users_vms)} Active', icon='people').props('flat color=white')
+            
+            with active_btn:
+                with ui.menu():
+                    @ui.refreshable
+                    def render_menu_content():
+                        """Render menu content without recreating the menu."""
+                        count = len(active_users_vms)
+                        
                         if count > 0:
                             ui.label('Active Users').classes('text-subtitle2 font-bold px-4 py-2')
                             ui.separator()
@@ -130,28 +128,27 @@ def create_navbar():
                                     with ui.item_section():
                                         ui.item_label(vm.display_name).classes('font-bold')
                                         ui.item_label(vm.email).classes('text-caption text-grey')
-                                        ui.item_label(f'Running {vm.experiment_count} experiment{"s" if vm.experiment_count != 1 else ""}').classes('text-caption')
+                                        # Show experiment type
+                                        exp_text = f'Running {vm.experiment_count} experiment{"s" if vm.experiment_count != 1 else ""}'
+                                        ui.item_label(exp_text).classes('text-caption')
                         else:
                             ui.label('No active experiments').classes('text-grey px-4 py-2')
+                    
+                    render_menu_content()
             
-            # Initial render
-            async def initial_load():
-                await load_active_users()
-                render_active_users.refresh()
-            
-            ui.timer(0.1, initial_load, once=True)  # Load immediately
-            
-            # Auto-refresh every 1 second for real-time updates
+            # Update data and refresh
             async def refresh_users():
                 await load_active_users()
-                render_active_users.refresh()
+                active_btn.text = f'👥 {len(active_users_vms)} Active'
+                render_menu_content.refresh()
             
+            # Initial load
+            ui.timer(0.1, refresh_users, once=True)
+            
+            # Auto-refresh every 1 second
             ui.timer(1.0, refresh_users)
             
-            # Render widget
-            render_active_users()
-            
-            # Logout button - clear session properly
+            # Logout button
             async def logout():
                 """Clear user session and redirect to onboarding."""
                 app.storage.user.clear()

@@ -1,7 +1,5 @@
 """
 Experiment management and chat interface.
-
-Setup and monitor robot-robot experiments.
 """
 
 from nicegui import ui, app
@@ -74,7 +72,7 @@ async def export_all_experiments():
 
 @ui.page('/experiments')
 async def experiments_list_page(request: Request):
-    """List all experiments with ViewModels pattern for zero-flicker auto-updates."""
+    """List all experiments with auto-refresh."""
     create_navbar()
     
     # Get current user
@@ -99,7 +97,7 @@ async def experiments_list_page(request: Request):
     
     ui.space()
     
-    # ViewModels storage - tracks experiment state for reactive updates
+    # ViewModels storage
     experiment_vms = {}  # {experiment_id: ExperimentListViewModel}
     batch_summaries = {}  # {batch_id: {'completed': 0, 'running': 0, ...}}
     
@@ -123,7 +121,7 @@ async def experiments_list_page(request: Request):
         render_experiments.refresh()
     
     def render_experiment_card_from_vm(vm: ExperimentListViewModel):
-        """Render a single experiment card from ViewModel (synchronous)."""
+        """Render a single experiment card from ViewModel."""
         # Make card clickable
         with ui.card().classes('w-full cursor-pointer hover:shadow-lg transition-all').on('click', lambda: ui.navigate.to(f'/experiments/{vm.id}')):
             with ui.row().classes('w-full items-center justify-between'):
@@ -241,7 +239,7 @@ async def experiments_list_page(request: Request):
                 render_experiment_card_from_vm(vm)
     
     async def load_data():
-        """Load data from database and populate ViewModels."""
+        """Load experiments and update ViewModels."""
         # Load all non-deleted experiments
         experiments = await Experiment.filter(
             deleted_at__isnull=True
