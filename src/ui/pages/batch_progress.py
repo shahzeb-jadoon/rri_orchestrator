@@ -136,12 +136,19 @@ async def batch_progress_page(batch_id: int, request: Request):
     
     async def refresh_data():
         """Refresh batch statistics and experiments list without scroll reset."""
+        # Save scroll position before refresh (using JavaScript)
+        scroll_position = await ui.run_javascript('window.scrollY', timeout=0.5)
+        
         # Re-query batch for control button state
         batch_data = await ExperimentBatch.get(id=batch_id)
         
-        # Refresh components (preserves scroll position!)
+        # Refresh components (this rebuilds DOM)
         await render_stats.refresh()
         await render_experiments.refresh()
+        
+        # Restore scroll position after refresh
+        if scroll_position is not None:
+            await ui.run_javascript(f'window.scrollTo(0, {scroll_position})', timeout=0.5)
         
         # Update control buttons
         if can_control:
