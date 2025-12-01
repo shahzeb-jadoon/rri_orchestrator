@@ -110,3 +110,95 @@ class ActiveUserViewModel:
             return f'Viewing {self.current_page}'
         return 'Idle'
 
+
+class ExperimentListViewModel:
+    """Reactive view model for experiment list items.
+    
+    Tracks individual experiment state for the experiments list page.
+    Enables zero-flicker updates when experiment status or messages change.
+    """
+    
+    def __init__(self, experiment_id: int, experiment_name: str):
+        self.id = experiment_id
+        self.name = experiment_name
+        self.msg_count = 0
+        self.max_turns = 0
+        self.created_at = None
+        
+        # Robot info
+        self.robot_a_name = ''
+        self.robot_a_model = ''
+        self.robot_b_name = ''
+        self.robot_b_model = ''
+        
+        # Creator info
+        self.creator_name = 'Unknown'
+        self.creator_id = None
+        
+        # Batch info
+        self.batch_id = None
+        self.batch_name = None
+        self.batch_creator_name = None
+        
+        # Queue status (for batch experiments)
+        self.queue_status = None  # queued, running, completed, failed
+        self.error_message = None
+    
+    @property
+    def expected_messages(self) -> int:
+        """Calculate expected message count."""
+        return self.max_turns * 2
+    
+    @property
+    def robots_display(self) -> str:
+        """Get formatted robot names and models."""
+        return f'{self.robot_a_name} ({self.robot_a_model}) vs {self.robot_b_name} ({self.robot_b_model})'
+    
+    @property
+    def progress_text(self) -> str:
+        """Get formatted progress text."""
+        if self.batch_id:
+            # Batch experiment - show expected
+            return f'{self.msg_count}/{self.expected_messages} messages ({self.max_turns} turns each)'
+        else:
+            # Standalone experiment - just show count
+            return f'{self.msg_count} messages'
+    
+    @property
+    def is_batch(self) -> bool:
+        """Check if this is a batch experiment."""
+        return self.batch_id is not None
+    
+    @property
+    def status_badge_text(self) -> str:
+        """Get status badge text for batch experiments."""
+        if not self.batch_id or not self.queue_status:
+            return ''
+        
+        if self.queue_status == 'completed':
+            return '✓ Complete'
+        elif self.queue_status == 'running':
+            return f'🔄 Running ({self.msg_count}/{self.expected_messages})'
+        elif self.queue_status == 'failed':
+            return '⚠ Failed'
+        elif self.queue_status == 'queued':
+            return '⏳ Queued'
+        return ''
+    
+    @property
+    def status_badge_color(self) -> str:
+        """Get status badge color for batch experiments."""
+        if not self.batch_id or not self.queue_status:
+            return 'grey'
+        
+        if self.queue_status == 'completed':
+            return 'positive'
+        elif self.queue_status == 'running':
+            return 'blue'
+        elif self.queue_status == 'failed':
+            return 'negative'
+        elif self.queue_status == 'queued':
+            return 'grey'
+        return 'grey'
+
+

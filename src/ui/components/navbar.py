@@ -3,7 +3,8 @@ Shared navigation bar component.
 """
 
 from nicegui import ui, app
-from src.database.models import ExperimentQueue, User
+from datetime import datetime, timedelta
+from src.database.models import ExperimentQueue, User, Experiment, ChatMessage
 from src.ui.viewmodels import ActiveUserViewModel
 
 
@@ -12,21 +13,44 @@ active_users_vms = {}  # {user_id: ActiveUserViewModel}
 
 
 async def load_active_users():
-    """Query database and update active users ViewModels."""
+    """Query database and update active users ViewModels.
+    
+    Detects active users by finding experiments with recent activity (messages within last 60 seconds).
+    This works for BOTH batch experiments and manual standalone experiments.
+    """
     global active_users_vms
     
-    # Get all running experiments with user info
-    running_entries = await ExperimentQueue.filter(
-        status='running'
-    ).prefetch_related('experiment', 'experiment__created_by')
+    # Define "active" as having a message in the last 60 seconds
+    activity_threshold = datetime.now() - timedelta(seconds=60)
+    
+    # Find experiments with recent messages
+    recent_messages = await ChatMessage.filter(
+        created_at__gte=activity_threshold
+    ).prefetch_related('experiment', 'experiment__created_by').distinct()
+    
+    # Track which experiments are active
+    active_experiment_ids = set()
+    for msg in recent_messages:
+        if msg.experiment:
+            active_experiment_ids.add(msg.experiment.id)
+    
+    # Get the active experiments with user info
+    if active_experiment_ids:
+        active_experiments = await Experiment.filter(
+            id__in=list(active_experiment_ids),
+            deleted_at__isnull=True
+        ).prefetch_related('created_by')
+    else:
+        active_experiments = []
     
     # Count experiments per user
     user_activity = {}
-    for entry in running_entries:
-        if entry.experiment and entry.experiment.created_by:
-            user_id = entry.experiment.created_by.id
-            user_name = entry.experiment.created_by.display_name
-            user_email = entry.experiment.created_by.email
+    for exp in active_experiments:
+        if exp.created_by:
+            user_id = exp.created_by.id
+            user_name = exp.created_by.display_name
+            user_email = exp.created_by.email
+            
             if user_id not in user_activity:
                 user_activity[user_id] = {
                     'name': user_name,
