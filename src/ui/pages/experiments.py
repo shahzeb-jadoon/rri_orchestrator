@@ -101,7 +101,7 @@ async def experiments_list_page(request: Request):
     # Load only non-deleted experiments
     experiments = await Experiment.filter(
         deleted_at__isnull=True
-    ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch')
+    ).prefetch_related('created_by', 'robot_a_profile', 'robot_b_profile', 'batch', 'batch__created_by')
     
     async def delete_experiment(exp_id: int):
         """Soft delete experiment with permission check."""
