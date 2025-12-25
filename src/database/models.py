@@ -176,6 +176,10 @@ class ChatMessage(Model):
     is_interjection = fields.BooleanField(default=False)  # Message sent by researcher, not robot
     interjection_target = fields.CharField(max_length=20, null=True)  # 'robot_a', 'robot_b', or 'both'
     
+    # Message impersonation tracking (for counterfactual research)
+    is_researcher_written = fields.BooleanField(default=False)  # Message written by researcher but appears as robot
+    visible_to_other_robot = fields.BooleanField(default=True)  # Whether other robot sees this message
+    
     class Meta:
         table = "chat_messages"
         ordering = ["created_at"]

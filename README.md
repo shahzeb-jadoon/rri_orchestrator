@@ -176,7 +176,7 @@ Follow the prompts to create your first user account.
 
 ## Running the Application
 
-### Start the Server
+### Development Mode
 
 **On the Dell server:**
 
@@ -185,6 +185,19 @@ uv run python src/main.py
 ```
 
 The application will be available at `http://localhost:8080`
+
+### Production Mode (Systemd Service)
+
+For production deployment with automatic startup on boot, see the [Deployment Guide](deployment/README.md).
+
+**Quick setup:**
+
+```bash
+sudo cp deployment/rri-orchestrator.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable rri-orchestrator
+sudo systemctl start rri-orchestrator
+```
 
 ### Access from Other Devices (via Cloudflare Tunnel)
 

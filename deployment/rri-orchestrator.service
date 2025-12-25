@@ -1,0 +1,18 @@
+[Unit]
+Description=RRI Orchestrator Web Application
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=shazzy
+WorkingDirectory=/home/shazzy/projects/rri_orchestrator
+Environment="PATH=/home/shazzy/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/shazzy/.local/bin/uv run python src/main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

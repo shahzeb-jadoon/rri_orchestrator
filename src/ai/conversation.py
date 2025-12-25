@@ -89,7 +89,7 @@ async def orchestrate_conversation_turn(
     else:
         # Apply hybrid context window management
         
-        # Transform roles first, filtering interjections by target
+        # Transform roles first, filtering interjections and invisible messages by target
         history = []
         for msg in messages:
             # Skip interjections not meant for this robot
@@ -97,6 +97,12 @@ async def orchestrate_conversation_turn(
                 target = msg.interjection_target
                 if target != 'both' and target != initiating_robot:
                     continue  # Skip this interjection, not for this robot
+            
+            # Skip messages not visible to this robot (impersonation with visibility=False)
+            if not msg.visible_to_other_robot:
+                # If message is from the OTHER robot and marked invisible, skip it
+                if msg.robot_name and msg.robot_name != initiating_robot:
+                    continue
             
             if msg.robot_name == initiating_robot:
                 history.append({
@@ -127,12 +133,17 @@ async def orchestrate_conversation_turn(
                 "content": f"Previous conversation summary: {summary_text}"
             })
             
-            # Add recent messages (skip first 5), filtering interjections
+            # Add recent messages (skip first 5), filtering interjections and visibility
             for msg in messages[5:]:
                 # Skip interjections not meant for this robot
                 if msg.is_interjection:
                     target = msg.interjection_target
                     if target != 'both' and target != initiating_robot:
+                        continue
+                
+                # Skip messages not visible to this robot
+                if not msg.visible_to_other_robot:
+                    if msg.robot_name and msg.robot_name != initiating_robot:
                         continue
                 
                 if msg.robot_name == initiating_robot:

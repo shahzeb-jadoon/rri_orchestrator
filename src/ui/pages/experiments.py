@@ -919,7 +919,7 @@ async def chat_page(experiment_id: int):
             ui.label('No messages yet. Start the conversation below.').classes('text-grey text-center')
         else:
             for vm in message_vms.values():
-                # Check if this is an interjection
+                # Check if this is an interjection or impersonation
                 msg = await ChatMessage.get(id=vm.id)
                 
                 if msg.is_interjection:
@@ -929,6 +929,23 @@ async def chat_page(experiment_id: int):
                         ui.label(f'👤 Researcher to {target_text}').classes('text-bold text-yellow-900')
                         ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
                         ui.label(vm.metadata_text).classes('text-caption text-grey')
+                elif msg.is_researcher_written:
+                    # Researcher impersonation - looks like robot message with subtle indicator
+                    is_robot_a = vm.robot_name == 'robot_a'
+                    robot_name = experiment.robot_a_profile.name if is_robot_a else experiment.robot_b_profile.name
+                    card_color = 'bg-green-100' if is_robot_a else 'bg-purple-100'
+                    
+                    with ui.card().classes(f'w-full {card_color} border-l-4 border-orange-400'):
+                        with ui.row().classes('w-full items-center justify-between'):
+                            ui.label(f'🤖 {robot_name}').classes('text-bold')
+                            ui.badge('✍️ Researcher', color='orange').props('outline').classes('text-xs')
+                        ui.label(vm.content).classes('text-body1 whitespace-pre-wrap')
+                        
+                        # Show visibility status
+                        visibility_text = 'Visible to both' if msg.visible_to_other_robot else 'Hidden from other robot'
+                        with ui.row().classes('items-center gap-2'):
+                            ui.label(vm.metadata_text).classes('text-caption text-grey')
+                            ui.label(f'• {visibility_text}').classes('text-caption text-orange-700')
                 else:
                     # Normal robot message
                     is_robot_a = vm.robot_name == 'robot_a'
@@ -1200,6 +1217,64 @@ async def chat_page(experiment_id: int):
                 state['pause_after_round'] = True
                 ui.notify('Will pause after current round finishes', type='info')
             
+            async def send_impersonation_handler():
+                """Show dialog to send message AS a robot with visibility control."""
+                with ui.dialog() as impersonation_dialog, ui.card().classes('w-[600px]'):
+                    ui.label('Send Message AS Robot').classes('text-h6')
+                    ui.label('Write a message that appears to come from a robot (counterfactual testing).').classes('text-caption text-grey mb-4')
+                    
+                    robot_select = ui.select(
+                        options={'robot_a': f'{experiment.robot_a_profile.name}', 
+                                'robot_b': f'{experiment.robot_b_profile.name}'},
+                        label='Impersonate:',
+                        value='robot_a'
+                    ).classes('w-full').props('outlined')
+                    
+                    message_input = ui.textarea(
+                        label='Message Content',
+                        placeholder='Type the message as if the robot wrote it...'
+                    ).classes('w-full').props('outlined rows=4')
+                    
+                    visibility_checkbox = ui.checkbox(
+                        'Visible to other robot?',
+                        value=True
+                    ).classes('mt-2')
+                    
+                    ui.label('⚠️ This message will appear as if it came from the selected robot.').classes('text-caption text-orange mt-2')
+                    ui.label('Use for A/B testing, counterfactual scenarios, or intervention studies.').classes('text-caption text-grey')
+                    
+                    async def send_impersonation():
+                        if not message_input.value or not message_input.value.strip():
+                            ui.notify('Please enter a message', type='negative')
+                            return
+                        
+                        # Create impersonated message
+                        impersonation_msg = await ChatMessage.create(
+                            experiment=experiment,
+                            role='assistant',  # Robot role
+                            content=message_input.value.strip(),
+                            robot_name=robot_select.value,
+                            is_researcher_written=True,
+                            visible_to_other_robot=visibility_checkbox.value
+                        )
+                        
+                        # Reload messages and refresh display
+                        await load_messages()
+                        await display_messages.refresh()
+                        
+                        visibility_text = 'visible to both' if visibility_checkbox.value else 'hidden from other robot'
+                        ui.notify(
+                            f'Message sent as {robot_select.options[robot_select.value]} ({visibility_text})',
+                            type='positive'
+                        )
+                        impersonation_dialog.close()
+                    
+                    with ui.row().classes('w-full justify-end gap-2 mt-4'):
+                        ui.button('Cancel', on_click=impersonation_dialog.close).props('flat')
+                        ui.button('Send', on_click=send_impersonation).props('color=primary')
+                
+                impersonation_dialog.open()
+            
             async def send_interjection_handler():
                 """Show dialog to send researcher interjection to robots."""
                 with ui.dialog() as interjection_dialog, ui.card().classes('w-[600px]'):
@@ -1315,6 +1390,7 @@ async def chat_page(experiment_id: int):
             pause_btn = ui.button('⏸ Pause Now', on_click=pause_immediately).props('color=orange disable')
             pause_round_btn = ui.button('⏸ Pause After Round', on_click=pause_after_round).props('flat disable')
             ui.button('👤 Send Interjection', on_click=send_interjection_handler).props('flat color=yellow-800')
+            ui.button('✍️ Impersonate Robot', on_click=send_impersonation_handler).props('flat color=orange-800')
             ui.button('🎯 Update Max Turns', on_click=update_max_turns_handler).props('flat color=purple')
             
             # Set initial visibility based on mode
