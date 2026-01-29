@@ -1,34 +1,21 @@
 """
 AI Model Configuration.
 
-This module defines available AI models for each provider and their
-default configurations. Used for UI dropdowns and validation.
+This module provides model configuration and uses dynamic model discovery
+to automatically fetch available models from provider APIs. Includes fallback
+static lists for offline/error scenarios.
 """
 
 from typing import Dict, List
 
-# Available models per provider
-AVAILABLE_MODELS: Dict[str, List[str]] = {
-    "openai": [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo",
-    ],
-    "gemini": [
-        "gemini-2.0-flash",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-        "gemini-pro",
-    ],
-    "anthropic": [
-        "claude-3-5-sonnet-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
-    ],
-}
+# Import dynamic discovery functions
+from src.ai.model_discovery import (
+    get_available_models as _get_dynamic_models,
+    FALLBACK_MODELS,
+)
+
+# Re-export for compatibility (now uses dynamic discovery)
+AVAILABLE_MODELS = FALLBACK_MODELS  # Fallback only
 
 # Provider display names
 PROVIDER_NAMES: Dict[str, str] = {
@@ -40,7 +27,7 @@ PROVIDER_NAMES: Dict[str, str] = {
 # Default models for each provider (recommended)
 DEFAULT_MODELS: Dict[str, str] = {
     "openai": "gpt-4o",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",  # Updated to latest
     "anthropic": "claude-3-5-sonnet-20241022",
 }
 
@@ -55,7 +42,13 @@ TOKEN_PRICING: Dict[str, Dict[str, float]] = {
     "openai/gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
     
     # Google Gemini (Free tier exists, but paid pricing shown)
+    "gemini/gemini-2.5-flash": {"input": 0.0, "output": 0.0},  # Free tier
+    "gemini/gemini-2.5-pro": {"input": 0.00125, "output": 0.005},
     "gemini/gemini-2.0-flash": {"input": 0.0, "output": 0.0},  # Free tier
+    "gemini/gemini-2.0-flash-exp": {"input": 0.0, "output": 0.0},  # Free tier
+    "gemini/gemini-flash-latest": {"input": 0.0, "output": 0.0},  # Free tier
+    "gemini/gemini-pro-latest": {"input": 0.0, "output": 0.0},  # Free tier
+    # Legacy models (deprecated)
     "gemini/gemini-1.5-pro": {"input": 0.00125, "output": 0.005},
     "gemini/gemini-1.5-flash": {"input": 0.000075, "output": 0.0003},
     "gemini/gemini-pro": {"input": 0.0005, "output": 0.0015},
@@ -72,13 +65,16 @@ def get_available_models(provider: str) -> List[str]:
     """
     Get list of available models for a provider.
     
+    Uses dynamic discovery with fallback to static lists.
+    
     Args:
         provider: Provider name (openai, gemini, anthropic)
         
     Returns:
         List of model names
     """
-    return AVAILABLE_MODELS.get(provider, [])
+    # Use dynamic discovery (falls back to FALLBACK_MODELS internally)
+    return _get_dynamic_models(provider)
 
 
 def get_default_model(provider: str) -> str:
@@ -130,4 +126,4 @@ def validate_provider_model(provider: str, model: str) -> bool:
     Returns:
         True if valid combination
     """
-    return model in AVAILABLE_MODELS.get(provider, [])
+    return model in get_available_models(provider)

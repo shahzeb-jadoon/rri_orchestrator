@@ -10,10 +10,11 @@ import asyncio
 import time
 from typing import Dict, List, Optional
 
-from litellm import acompletion, RateLimitError, APIError, Timeout
+from litellm import acompletion, RateLimitError, APIError, Timeout, NotFoundError
 from src.config import settings
 from src.database.models import RobotProfile
 from src.ai.model_config import calculate_cost
+from src.ai.model_discovery import handle_model_not_found, get_model_suggestion
 from src.utils.logger import logger
 
 
@@ -22,13 +23,14 @@ MAX_RETRIES = 3
 BASE_DELAY = 1  # seconds
 
 
-async def retry_with_backoff(func, *args, max_retries=MAX_RETRIES, **kwargs):
+async def retry_with_backoff(func, *args, max_retries=MAX_RETRIES, robot_profile=None, **kwargs):
     """
     Retry a function with exponential backoff.
     
     Args:
         func: Async function to retry
         max_retries: Maximum number of retry attempts
+        robot_profile: Optional robot profile for model migration suggestions
         *args, **kwargs: Arguments to pass to func
         
     Returns:
@@ -42,6 +44,37 @@ async def retry_with_backoff(func, *args, max_retries=MAX_RETRIES, **kwargs):
     for attempt in range(max_retries):
         try:
             return await func(*args, **kwargs)
+            
+        except NotFoundError as e:
+            # Model not found (404) - try to refresh cache and suggest alternative
+            last_exception = e
+            
+            if robot_profile and attempt == 0:  # Only try once
+                try:
+                    should_retry, suggested_model = await handle_model_not_found(
+                        robot_profile.ai_provider,
+                        robot_profile.model_name,
+                        e
+                    )
+                    
+                    if suggested_model and suggested_model != robot_profile.model_name:
+                        error_msg = (
+                            f"Model '{robot_profile.model_name}' is not available. "
+                            f"Suggested alternative: '{suggested_model}'. "
+                            f"Please update your robot profile to use the new model."
+                        )
+                        logger.error(error_msg)
+                        # Re-raise with helpful message
+                        raise ValueError(error_msg) from e
+                        
+                except ValueError:
+                    raise  # Re-raise the helpful error message
+                except Exception as refresh_error:
+                    logger.error(f"Failed to handle model not found: {refresh_error}")
+            
+            # If we can't recover, raise the original error
+            logger.error(f"Model not found and no alternative available: {e}")
+            raise
             
         except RateLimitError as e:
             last_exception = e
@@ -176,7 +209,7 @@ async def generate_robot_response(
     # Call LiteLLM with retry logic
     start_time = time.time()
     try:
-        response = await retry_with_backoff(make_llm_call)
+        response = await retry_with_backoff(make_llm_call, robot_profile=robot_profile)
     except Exception as e:
         logger.error(f"LLM call failed after retries for {model}: {e}")
         raise

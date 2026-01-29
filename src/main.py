@@ -41,6 +41,14 @@ async def startup():
         logger.error(f"Failed to initialize database: {e}")
         raise
     
+    # Initialize model discovery cache
+    try:
+        from src.ai.model_discovery import initialize_model_cache
+        await initialize_model_cache()
+        logger.info("Model cache initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize model cache, using fallback: {e}")
+    
     # Start batch executor
     from src.batch import start_executor
     await start_executor()
