@@ -104,7 +104,7 @@ async def onboarding_page():
         # Submit button
         async def create_account():
             """Create user account and redirect."""
-            if not display_name_input.value or len(display_name_input.value.strip()) < 2:
+            if not name_input.value or len(name_input.value.strip()) < 2:
                 ui.notify('Please enter a valid name (at least 2 characters)', type='negative')
                 return
             
@@ -117,7 +117,7 @@ async def onboarding_page():
                 # Create user
                 user = await User.create(
                     email=email,
-                    display_name=display_name_input.value.strip(),
+                    display_name=name_input.value.strip(),
                     role=role,
                     is_approved=is_first_user,  # Auto-approve first user (admin)
                     approved_at=datetime.now() if is_first_user else None,
