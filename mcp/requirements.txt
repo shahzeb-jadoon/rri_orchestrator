@@ -1,0 +1,6 @@
+langgraph>=0.2.28
+langchain-core>=0.3
+litellm>=1.40
+mcp>=1.2.0
+psycopg[binary]>=3.1   # for the PostgreSQL MCP server (mcp_servers/postgres_server.py)
+pytest>=8.0
